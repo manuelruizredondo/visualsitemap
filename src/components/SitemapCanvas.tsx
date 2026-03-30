@@ -171,10 +171,24 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
   }, [projectId]);
 
   function startPolling(jobId: string, projId: string) {
+    // Always clear any existing interval before starting a new one
+    if (pollingRef.current) clearInterval(pollingRef.current);
+
+    let consecutiveErrors = 0;
+
     pollingRef.current = setInterval(async () => {
       try {
         const res = await fetch(`/api/screenshots/${jobId}`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          // 404 = job lost (server restart). Stop polling to avoid infinite loop.
+          consecutiveErrors++;
+          if (consecutiveErrors >= 3) {
+            clearInterval(pollingRef.current!);
+            setScreenshotStatus(null);
+          }
+          return;
+        }
+        consecutiveErrors = 0;
         const job: ScreenshotJob = await res.json();
         setScreenshotStatus(job);
 
@@ -335,6 +349,33 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
       setSavingName(false);
     }
   }, [projectId, newName, project?.name]);
+
+  const handleRecaptureAll = useCallback(async () => {
+    if (screenshotStatus?.status === "processing") return; // already running
+    // Stop any existing polling before launching a new job
+    if (pollingRef.current) clearInterval(pollingRef.current);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/recapture-all`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const { jobId } = data as { jobId: string };
+
+      // Reset thumbnails and polling refs
+      thumbnailSentRef.current = false;
+      pageMetaSentRef.current = false;
+
+      // Update project with new jobId
+      setProject((prev) => prev ? { ...prev, screenshotJobId: jobId, pageDrawings: {} } : prev);
+
+      // Start polling
+      startPolling(jobId, projectId);
+    } catch (err) {
+      console.error("Recapture all error:", err);
+    }
+  }, [projectId, screenshotStatus]);
 
   const handleExport = useCallback(async () => {
     try {
@@ -551,6 +592,102 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
   // Keep ref in sync
   nameChangeRef.current = handleNameChange;
 
+  async function handleRecapture(pageKey: string, url: string) {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/recapture`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      if (!res.ok) throw new Error("Recapture failed");
+      const data = await res.json();
+      const meta = data.pageMeta;
+
+      // Update project pageMeta
+      setProject((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          pageMeta: { ...prev.pageMeta, [url]: meta },
+          pageDrawings: (() => {
+            const pd = { ...prev.pageDrawings };
+            delete pd[url];
+            return pd;
+          })(),
+        };
+      });
+
+      // Update node screenshot in canvas
+      let seoScore: number | undefined;
+      if (meta.seo) {
+        let score = 0;
+        if (meta.seo.titleLength >= 30 && meta.seo.titleLength <= 60) score++;
+        if (meta.seo.descriptionLength >= 120 && meta.seo.descriptionLength <= 160) score++;
+        if (meta.seo.h1.length > 0) score++;
+        if (meta.seo.h1.length === 1) score++;
+        if (meta.seo.hasOgTitle) score++;
+        if (meta.seo.hasOgDescription) score++;
+        if (meta.seo.hasOgImage) score++;
+        if (meta.seo.hasCanonical) score++;
+        if (meta.seo.totalImages === 0 || meta.seo.imgWithoutAlt === 0) score++;
+        if (meta.seo.wordCount > 300) score++;
+        seoScore = score;
+      }
+
+      // Cache-bust the screenshot URL
+      const bustUrl = meta.screenshotPath ? `${meta.screenshotPath}?t=${Date.now()}` : undefined;
+
+      setNodes((prev) =>
+        prev.map((n) => {
+          const nKey = n.data.isCustom ? n.id : n.data.url;
+          if (nKey === pageKey) {
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                screenshotUrl: bustUrl,
+                title: meta.title || n.data.label,
+                seoScore,
+              },
+            };
+          }
+          return n;
+        })
+      );
+
+      // Update selected node so drawer refreshes
+      setSelectedNode((prev) =>
+        prev && prev.nodeKey === pageKey
+          ? { ...prev, screenshotUrl: bustUrl }
+          : prev
+      );
+    } catch (err) {
+      console.error("Recapture error:", err);
+    }
+  }
+
+  async function handleDrawingSave(pageKey: string, drawingData: string | null) {
+    try {
+      await fetch(`/api/projects/${projectId}/drawing`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pageKey, drawingData }),
+      });
+      setProject((prev) => {
+        if (!prev) return prev;
+        const pageDrawings = { ...prev.pageDrawings };
+        if (drawingData) {
+          pageDrawings[pageKey] = drawingData;
+        } else {
+          delete pageDrawings[pageKey];
+        }
+        return { ...prev, pageDrawings };
+      });
+    } catch {
+      // silently fail
+    }
+  }
+
   function handleTagDeleted(tagId: string) {
     setProject((prev) => {
       if (!prev) return prev;
@@ -689,6 +826,30 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
           </div>
         )}
         <button
+          onClick={handleRecaptureAll}
+          disabled={screenshotStatus?.status === "processing"}
+          className={`px-3 py-2 text-sm rounded-lg border transition-all flex items-center gap-1.5 ${
+            screenshotStatus?.status === "processing"
+              ? "bg-amber-50 text-amber-600 border-amber-300 cursor-not-allowed"
+              : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+          }`}
+          title="Recapturar todas las páginas"
+        >
+          {screenshotStatus?.status === "processing" ? (
+            <>
+              <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+              {screenshotStatus.completed}/{screenshotStatus.total}
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Recapturar todo
+            </>
+          )}
+        </button>
+        <button
           onClick={handleExport}
           className="px-3 py-2 text-sm rounded-lg border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 transition-all flex items-center gap-1.5"
           title="Exportar sitemap como PNG"
@@ -786,6 +947,9 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
           onTagDeleted={handleTagDeleted}
           customName={project?.pageNames?.[selectedNode.nodeKey]}
           onNameChange={handleNameChange}
+          savedDrawing={project?.pageDrawings?.[selectedNode.nodeKey]}
+          onDrawingSave={handleDrawingSave}
+          onRecapture={handleRecapture}
         />
       )}
     </div>

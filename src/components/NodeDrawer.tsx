@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { Annotation, AnnotationType, PageMeta, SeoData, Tag } from "@/types";
 import TagSelector from "./TagSelector";
+import DrawingCanvas from "./DrawingCanvas";
 
 interface NodeDrawerProps {
   projectId: string;
@@ -25,6 +26,9 @@ interface NodeDrawerProps {
   onTagDeleted: (tagId: string) => void;
   customName?: string;
   onNameChange: (pageKey: string, name: string) => void;
+  savedDrawing?: string;
+  onDrawingSave: (pageKey: string, drawingData: string | null) => void;
+  onRecapture: (pageKey: string, url: string) => Promise<void>;
 }
 
 const TYPE_CONFIG: Record<AnnotationType, { label: string; color: string; bg: string; dot: string }> = {
@@ -105,6 +109,9 @@ export default function NodeDrawer({
   onTagDeleted,
   customName,
   onNameChange,
+  savedDrawing,
+  onDrawingSave,
+  onRecapture,
 }: NodeDrawerProps) {
   const [localAnnotations, setLocalAnnotations] = useState<Annotation[]>(annotations);
   const [newText, setNewText] = useState("");
@@ -119,6 +126,7 @@ export default function NodeDrawer({
   const [editingTitle, setEditingTitle] = useState(false);
   const [editTitleValue, setEditTitleValue] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
+  const [recapturing, setRecapturing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -215,6 +223,23 @@ export default function NodeDrawer({
     });
   }
 
+  const handleDrawingSave = useCallback(
+    (dataUrl: string | null) => {
+      onDrawingSave(nodeKey, dataUrl);
+    },
+    [nodeKey, onDrawingSave]
+  );
+
+  async function handleRecapture() {
+    if (!url || recapturing) return;
+    setRecapturing(true);
+    try {
+      await onRecapture(nodeKey, url);
+    } finally {
+      setRecapturing(false);
+    }
+  }
+
   async function handleSaveTitle() {
     const trimmed = editTitleValue.trim();
     // If same as current custom name or original title, skip
@@ -263,15 +288,11 @@ export default function NodeDrawer({
                 </svg>
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto">
-              <img
-                src={displayImage}
-                alt={title}
-                className="w-full"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
+            <DrawingCanvas
+              imageUrl={displayImage}
+              savedDrawing={savedDrawing}
+              onSave={handleDrawingSave}
+            />
           </div>
         </div>
       )}
@@ -344,11 +365,34 @@ export default function NodeDrawer({
                   </svg>
                 </div>
               )}
-              {/* Image upload overlay */}
+              {/* Recapture + Image upload overlay */}
+              <div className="absolute bottom-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                {url && (
+                  <button
+                    onClick={handleRecapture}
+                    disabled={recapturing}
+                    className="px-2.5 py-1.5 bg-black/60 hover:bg-black/80 text-white text-xs rounded-lg flex items-center gap-1.5 disabled:opacity-50"
+                    title="Recapturar página"
+                  >
+                    {recapturing ? (
+                      <>
+                        <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
+                        Capturando...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Recapturar
+                      </>
+                    )}
+                  </button>
+                )}
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingImage}
-                className="absolute bottom-2 right-2 px-2.5 py-1.5 bg-black/60 hover:bg-black/80 text-white text-xs rounded-lg flex items-center gap-1.5 transition-opacity opacity-0 group-hover:opacity-100 disabled:opacity-50"
+                className="px-2.5 py-1.5 bg-black/60 hover:bg-black/80 text-white text-xs rounded-lg flex items-center gap-1.5 disabled:opacity-50"
               >
                 {uploadingImage ? (
                   <>
@@ -364,6 +408,7 @@ export default function NodeDrawer({
                   </>
                 )}
               </button>
+              </div>{/* end button group */}
               <input
                 ref={fileInputRef}
                 type="file"
