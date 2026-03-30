@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.next/
+public/screenshots/
+data/
+
+# Entorno local (no subir claves)
+.env
+.env.local
+.env*.local
+
+# Claude / build local
+.claude/settings.local.json
+*.tsbuildinfo
+
+# Imágenes subidas por usuarios (generadas en runtime)
+public/custom-images/
