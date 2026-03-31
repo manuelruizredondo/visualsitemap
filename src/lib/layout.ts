@@ -3,7 +3,7 @@ import type { Node, Edge } from "@xyflow/react";
 const NODE_WIDTH = 240;
 const NODE_HEIGHT = 180;
 const H_GAP = 80;
-const V_GAP = 50;
+const V_GAP = 80;
 const MARGIN = 50;
 
 /**

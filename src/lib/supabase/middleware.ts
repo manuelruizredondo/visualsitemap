@@ -1,54 +1,70 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+function getSupabaseEnv() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  return { url, key };
+}
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
+export async function updateSession(request: NextRequest) {
+  const { url, key } = getSupabaseEnv();
+
+  if (!url || !key) {
+    console.error(
+      "[middleware] Faltan NEXT_PUBLIC_SUPABASE_URL o clave pública (ANON / PUBLISHABLE). Revisa variables en Vercel."
+    );
+    return NextResponse.next({ request });
+  }
+
+  let response = NextResponse.next({ request });
+
+  try {
+    const supabase = createServerClient(url, key, {
       cookies: {
         getAll() {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
-          supabaseResponse = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          );
+          // No usar request.cookies.set en Edge (Vercel / Next.js 15+): puede lanzar y provocar
+          // MIDDLEWARE_INVOCATION_FAILED. Solo escribir en la respuesta.
+          response = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
         },
       },
+    });
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const publicPaths = ["/login", "/register", "/auth/callback"];
+    const isPublicPath = publicPaths.some((path) =>
+      request.nextUrl.pathname.startsWith(path)
+    );
+
+    if (!user && !isPublicPath) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = "/login";
+      return NextResponse.redirect(redirectUrl);
     }
-  );
 
-  // IMPORTANT: Do NOT run any code between createServerClient and supabase.auth.getUser().
-  // A simple mistake could make it very hard to debug auth issues.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    if (
+      user &&
+      (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/register")
+    ) {
+      const homeUrl = request.nextUrl.clone();
+      homeUrl.pathname = "/";
+      return NextResponse.redirect(homeUrl);
+    }
 
-  // Public paths that don't require auth
-  const publicPaths = ["/login", "/register", "/auth/callback"];
-  const isPublicPath = publicPaths.some((path) =>
-    request.nextUrl.pathname.startsWith(path)
-  );
-
-  if (!user && !isPublicPath) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
+    return response;
+  } catch (err) {
+    console.error("[middleware] Supabase:", err);
+    return NextResponse.next({ request });
   }
-
-  // If user is logged in and tries to access login/register, redirect to home
-  if (user && (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/register")) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/";
-    return NextResponse.redirect(url);
-  }
-
-  return supabaseResponse;
 }

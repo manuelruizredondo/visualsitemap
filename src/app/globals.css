@@ -1,1 +1,138 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap');
 @import "tailwindcss";
+
+/* ── Elevated Canvas Design System Tokens ─────────────────────────── */
+:root {
+  /* Surface Foundation */
+  --ec-background: #f5f6f7;
+  --ec-surface: #f5f6f7;
+  --ec-surface-container-lowest: #ffffff;
+  --ec-surface-container-low: #eff1f2;
+  --ec-surface-container: #e9ebec;
+  --ec-surface-container-high: #e0e3e4;
+  --ec-surface-container-highest: #d8dbdc;
+
+  /* Primary — Signature Lime */
+  --ec-primary: #6d7300;
+  --ec-primary-container: #E2F162;
+  --ec-on-primary-container: #535c00;
+
+  /* Secondary */
+  --ec-secondary: #5a3bdd;
+  --ec-secondary-container: #e8e0ff;
+  --ec-on-secondary: #ffffff;
+  --ec-on-secondary-container: #1c0068;
+
+  /* Tertiary / Neutral Controls */
+  --ec-tertiary: #e0e3e4;
+  --ec-on-tertiary-container: #3a3e3f;
+
+  /* Text / On-Surface */
+  --ec-on-surface: #1a1c1e;
+  --ec-on-surface-variant: #6b7072;
+  --ec-outline-variant: #c4c7c8;
+
+  /* Functional */
+  --ec-error: #ba1a1a;
+  --ec-error-container: #ffdad6;
+  --ec-success: #2e7d32;
+  --ec-warning: #e65100;
+
+  /* Glass */
+  --ec-glass-bg: rgba(255, 255, 255, 0.80);
+  --ec-glass-blur: 20px;
+
+  /* Ambient Glow */
+  --ec-shadow-ambient: 0 4px 30px rgba(26, 28, 30, 0.04);
+  --ec-shadow-elevated: 0 8px 40px rgba(26, 28, 30, 0.06);
+  --ec-shadow-floating: 0 12px 50px rgba(26, 28, 30, 0.08);
+}
+
+/* ── Global Base ─────────────────────────────────────────────────── */
+* {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+body {
+  background: var(--ec-background);
+  color: var(--ec-on-surface);
+}
+
+/* ── No-Line Rule: override default borders ──────────────────────── */
+/* Ghost border utility */
+.ghost-border {
+  border: 1px solid rgba(196, 199, 200, 0.10);
+}
+
+/* ── Glass Effect ────────────────────────────────────────────────── */
+.glass {
+  background: var(--ec-glass-bg);
+  backdrop-filter: blur(var(--ec-glass-blur));
+  -webkit-backdrop-filter: blur(var(--ec-glass-blur));
+}
+
+/* ── Elevated Canvas Scrollbar ───────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ec-surface-container-high);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ec-on-surface-variant);
+}
+
+/* ── React Flow Controls ────────────────────────────────────────── */
+.react-flow__controls {
+  border-radius: 16px !important;
+  overflow: hidden !important;
+  box-shadow: 0 4px 24px rgba(26, 28, 30, 0.06), 0 1px 4px rgba(26, 28, 30, 0.04) !important;
+  border: none !important;
+  margin-right: 20px !important;
+  margin-bottom: 20px !important;
+}
+
+.react-flow__controls button {
+  width: 36px !important;
+  height: 36px !important;
+  border: none !important;
+  border-bottom: 1px solid var(--ec-surface-container-high, #e0e3e4) !important;
+  background: #fff !important;
+  color: var(--ec-on-surface-variant, #6b7072) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: background 0.15s !important;
+}
+
+.react-flow__controls button:hover {
+  background: var(--ec-surface-container-low, #eff1f2) !important;
+}
+
+.react-flow__controls button:last-child {
+  border-bottom: none !important;
+}
+
+.react-flow__controls button svg:not(.vs-controls-icon) {
+  fill: var(--ec-on-surface-variant, #6b7072) !important;
+  width: 16px !important;
+  height: 16px !important;
+}
+
+/* Zoom / centrar usan iconos con fill; curvas y rectas son por trazo — no forzar fill */
+.react-flow__controls button svg.vs-controls-icon {
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-width: 2px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  width: 16px !important;
+  height: 16px !important;
+  flex-shrink: 0;
+  display: block;
+}

@@ -29,7 +29,7 @@ function NavItem({
 }) {
   if (disabled && !onClick) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-600 text-sm cursor-not-allowed select-none">
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-[#6b7072] text-sm cursor-not-allowed select-none">
         {icon}
         {label}
       </div>
@@ -40,10 +40,10 @@ function NavItem({
     return (
       <button
         onClick={onClick}
-        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+        className={`w-full flex items-center gap-2 px-3 py-2 rounded-full text-sm transition-colors ${
           isActive
-            ? "text-white bg-gray-800"
-            : "text-gray-400 hover:text-white hover:bg-gray-800"
+            ? "text-[#1c0068] bg-[#e8e0ff]"
+            : "text-[#9ba0a2] hover:text-white hover:bg-white/8"
         }`}
       >
         {icon}
@@ -55,10 +55,10 @@ function NavItem({
   return (
     <Link
       href={href || "#"}
-      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+      className={`flex items-center gap-2 px-3 py-2 rounded-full text-sm transition-colors ${
         isActive
-          ? "text-white bg-gray-800"
-          : "text-gray-400 hover:text-white hover:bg-gray-800"
+          ? "text-[#1c0068] bg-[#e8e0ff]"
+          : "text-[#9ba0a2] hover:text-white hover:bg-white/8"
       }`}
     >
       {icon}
@@ -69,11 +69,11 @@ function NavItem({
 
 export default function Sidebar({ projects, activeId, userEmail, activeView = "recent", onViewChange }: SidebarProps) {
   return (
-    <aside className="w-60 min-h-screen bg-gray-900 text-white flex flex-col flex-shrink-0">
+    <aside className="w-60 m-[20px] rounded-[20px] min-h-[calc(100vh-40px)] bg-[#1a1c1e] text-white flex flex-col flex-shrink-0 overflow-hidden">
       {/* Logo */}
-      <div className="px-4 py-5 border-b border-gray-800">
+      <div className="px-4 py-5 border-b border-white/8">
         <Link href="/" className="flex items-center gap-2">
-          <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-6 h-6 text-[#E2F162]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
           </svg>
           <span className="font-semibold text-sm">Visual Sitemap</span>
@@ -81,8 +81,8 @@ export default function Sidebar({ projects, activeId, userEmail, activeView = "r
       </div>
 
       {/* Navigation */}
-      <nav className="px-2 py-4 border-b border-gray-800">
-        <p className="px-3 mb-2 text-xs font-medium uppercase tracking-wider text-gray-600">
+      <nav className="px-2 py-4 border-b border-white/8">
+        <p className="px-3 mb-2 text-xs font-medium uppercase tracking-wider text-[#6b7072]">
           Navegar
         </p>
         <NavItem
@@ -121,12 +121,12 @@ export default function Sidebar({ projects, activeId, userEmail, activeView = "r
       {/* Projects list */}
       <div className="px-2 py-4 flex-1 overflow-y-auto">
         <div className="flex items-center justify-between px-3 mb-2">
-          <p className="text-xs font-medium uppercase tracking-wider text-gray-600">
+          <p className="text-xs font-medium uppercase tracking-wider text-[#6b7072]">
             Proyectos
           </p>
           <Link
             href="/projects/new"
-            className="text-gray-500 hover:text-white transition-colors"
+            className="text-[#6b7072] hover:text-white transition-colors"
             title="Nuevo proyecto"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -136,7 +136,7 @@ export default function Sidebar({ projects, activeId, userEmail, activeView = "r
         </div>
 
         {projects.length === 0 ? (
-          <p className="px-3 text-xs text-gray-600 italic">Sin proyectos</p>
+          <p className="px-3 text-xs text-[#6b7072] italic">Sin proyectos</p>
         ) : (
           <ul className="space-y-0.5">
             {projects.map((p) => (
@@ -145,11 +145,11 @@ export default function Sidebar({ projects, activeId, userEmail, activeView = "r
                   href={`/projects/${p.id}`}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm truncate transition-colors ${
                     activeId === p.id
-                      ? "bg-gray-800 text-white"
-                      : "text-gray-400 hover:text-white hover:bg-gray-800"
+                      ? "bg-[#e8e0ff] text-[#1c0068]"
+                      : "text-[#9ba0a2] hover:text-white hover:bg-white/8"
                   }`}
                 >
-                  <span className="w-5 h-5 rounded bg-blue-900 text-blue-300 flex items-center justify-center text-xs font-bold flex-shrink-0 uppercase">
+                  <span className="w-5 h-5 rounded bg-[#E2F162] text-[#535c00] flex items-center justify-center text-xs font-bold flex-shrink-0 uppercase">
                     {p.domain.charAt(0)}
                   </span>
                   <span className="truncate">{p.name}</span>
@@ -162,7 +162,7 @@ export default function Sidebar({ projects, activeId, userEmail, activeView = "r
 
       {/* User menu */}
       {userEmail && (
-        <div className="px-2 py-3 border-t border-gray-800">
+        <div className="px-2 py-3 border-t border-white/8">
           <UserMenu email={userEmail} />
         </div>
       )}

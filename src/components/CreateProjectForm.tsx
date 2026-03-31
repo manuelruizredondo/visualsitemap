@@ -111,7 +111,7 @@ export default function CreateProjectForm() {
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Project name */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-[#1a1c1e] mb-1">
           Nombre del proyecto <span className="text-red-500">*</span>
         </label>
         <input
@@ -119,25 +119,32 @@ export default function CreateProjectForm() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Mi sitio web"
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-4 py-2.5 bg-[#eff1f2] rounded-full focus:outline-none transition-all"
+          style={{ boxShadow: "inset 0 0 0 1px transparent" }}
+          onFocus={(e) => {
+            e.currentTarget.style.boxShadow = "inset 0 0 0 2px rgba(226, 241, 98, 0.3)";
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.boxShadow = "inset 0 0 0 1px transparent";
+          }}
         />
       </div>
 
       {/* Source tabs */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-[#1a1c1e] mb-2">
           Fuente del sitemap
         </label>
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-lg mb-4">
+        <div className="flex gap-1 bg-[#eff1f2] p-1 rounded-full mb-4">
           {tabs.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => { setTab(t.id); setError(""); setVerifyStatus(null); }}
-              className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${
+              className={`flex-1 py-2 px-3 rounded-full text-sm font-medium transition-all ${
                 tab === t.id
-                  ? "bg-white text-gray-900 shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
+                  ? "bg-white text-[#1a1c1e] shadow-sm"
+                  : "text-[#6b7072] hover:text-[#1a1c1e]"
               }`}
             >
               {t.label}
@@ -154,13 +161,19 @@ export default function CreateProjectForm() {
                 value={siteUrl}
                 onChange={(e) => { setSiteUrl(e.target.value); setVerifyStatus(null); }}
                 placeholder="https://ejemplo.com"
-                className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 px-4 py-2.5 bg-[#eff1f2] rounded-full focus:outline-none transition-all"
+                onFocus={(e) => {
+                  e.currentTarget.style.boxShadow = "inset 0 0 0 2px rgba(226, 241, 98, 0.3)";
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.boxShadow = "inset 0 0 0 1px transparent";
+                }}
               />
               <button
                 type="button"
                 onClick={handleVerifyUrl}
                 disabled={verifying || !siteUrl.trim()}
-                className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 text-sm font-medium whitespace-nowrap transition-colors"
+                className="px-4 py-2.5 bg-[#eff1f2] text-[#1a1c1e] rounded-full hover:bg-[#e0e3e4] disabled:opacity-50 text-sm font-medium whitespace-nowrap transition-colors"
               >
                 {verifying ? "Buscando..." : "Verificar"}
               </button>
@@ -174,7 +187,7 @@ export default function CreateProjectForm() {
                 {verifyStatus.message}
               </p>
             )}
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-[#6b7072]">
               Se buscará automáticamente en /sitemap.xml, /sitemap_index.xml y robots.txt
             </p>
           </div>
@@ -183,7 +196,7 @@ export default function CreateProjectForm() {
         {/* File tab */}
         {tab === "file" && (
           <div
-            className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-all"
+            className="border-2 border-dashed border-[#c4c7c8] rounded-[20px] p-8 text-center cursor-pointer hover:border-[#E2F162] hover:bg-white transition-all"
             onClick={() => fileInputRef.current?.click()}
           >
             <input
@@ -193,14 +206,14 @@ export default function CreateProjectForm() {
               onChange={handleFileUpload}
               className="hidden"
             />
-            <svg className="w-10 h-10 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-10 h-10 mx-auto text-[#6b7072] mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
             {xmlContent ? (
               <p className="text-green-600 font-medium text-sm">✓ Archivo cargado</p>
             ) : (
               <>
-                <p className="text-gray-600 font-medium text-sm">Arrastra o haz clic para subir un sitemap.xml</p>
+                <p className="text-[#1a1c1e] font-medium text-sm">Arrastra o haz clic para subir un sitemap.xml</p>
               </>
             )}
           </div>
@@ -212,13 +225,19 @@ export default function CreateProjectForm() {
             value={xmlContent}
             onChange={(e) => { setXmlContent(e.target.value); setError(""); }}
             placeholder={'<?xml version="1.0" encoding="UTF-8"?>\n<urlset ...>\n  <url><loc>https://...</loc></url>\n</urlset>'}
-            className="w-full h-48 p-4 border border-gray-200 rounded-xl font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+            className="w-full h-48 p-4 bg-[#eff1f2] rounded-2xl font-mono text-sm resize-none focus:outline-none transition-all"
+            onFocus={(e) => {
+              e.currentTarget.style.boxShadow = "inset 0 0 0 2px rgba(226, 241, 98, 0.3)";
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.boxShadow = "inset 0 0 0 1px transparent";
+            }}
           />
         )}
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600">
+        <div className="bg-[#ffdad6] rounded-2xl p-3 text-sm text-red-600">
           {error}
         </div>
       )}
@@ -226,7 +245,7 @@ export default function CreateProjectForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full py-3 px-6 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+        className="w-full py-3 px-6 bg-[#E2F162] text-[#535c00] font-semibold rounded-full hover:bg-[#E2F162]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
       >
         {loading ? (
           <span className="flex items-center justify-center gap-2">

@@ -7,7 +7,7 @@ import DrawingCanvas from "./DrawingCanvas";
 
 interface NodeDrawerProps {
   projectId: string;
-  nodeKey: string; // url for sitemap nodes, nodeId for custom nodes
+  nodeKey: string;
   url: string;
   label: string;
   fullPath: string;
@@ -32,59 +32,23 @@ interface NodeDrawerProps {
 }
 
 const TYPE_CONFIG: Record<AnnotationType, { label: string; color: string; bg: string; dot: string }> = {
-  error: {
-    label: "Error",
-    color: "text-red-700",
-    bg: "bg-red-50 border-red-200",
-    dot: "bg-red-500",
-  },
-  mejora: {
-    label: "Mejora",
-    color: "text-amber-700",
-    bg: "bg-amber-50 border-amber-200",
-    dot: "bg-amber-500",
-  },
-  nota: {
-    label: "Nota",
-    color: "text-blue-700",
-    bg: "bg-blue-50 border-blue-200",
-    dot: "bg-blue-500",
-  },
+  error: { label: "Error", color: "text-red-600", bg: "bg-red-50/60", dot: "bg-red-500" },
+  mejora: { label: "Mejora", color: "text-amber-600", bg: "bg-amber-50/60", dot: "bg-amber-500" },
+  nota: { label: "Nota", color: "text-[#5a3bdd]", bg: "bg-[#5a3bdd]/5", dot: "bg-[#5a3bdd]" },
 };
 
 function calculateSeoScore(seo: SeoData): number {
   let score = 0;
-
-  // Title check (30-60 chars)
   if (seo.titleLength >= 30 && seo.titleLength <= 60) score++;
-
-  // Description check (120-160 chars)
   if (seo.descriptionLength >= 120 && seo.descriptionLength <= 160) score++;
-
-  // Has at least one H1
   if (seo.h1.length > 0) score++;
-
-  // Has exactly one H1
   if (seo.h1.length === 1) score++;
-
-  // Has OG title
   if (seo.hasOgTitle) score++;
-
-  // Has OG description
   if (seo.hasOgDescription) score++;
-
-  // Has OG image
   if (seo.hasOgImage) score++;
-
-  // Has canonical
   if (seo.hasCanonical) score++;
-
-  // No images without alt (or no images at all)
   if (seo.totalImages === 0 || seo.imgWithoutAlt === 0) score++;
-
-  // Word count > 300
   if (seo.wordCount > 300) score++;
-
   return score;
 }
 
@@ -103,30 +67,69 @@ function calculateA11yScore(a11y: A11yData): number {
   return Math.max(0, score);
 }
 
+/* ── Reusable score badge ────────────────────────────────────────────── */
+function ScoreBadge({ score, max, label }: { score: number; max: number; label: string }) {
+  const pct = score / max;
+  const color = pct >= 0.8 ? "#34d399" : pct >= 0.5 ? "#fbbf24" : "#f87171";
+  return (
+    <div className="flex items-center gap-3">
+      <div style={{
+        width: 56, height: 56, borderRadius: "50%",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontWeight: 700, fontSize: 16,
+        background: `conic-gradient(${color} ${pct * 360}deg, var(--ec-surface-container-low) 0deg)`,
+        color: "var(--ec-on-surface)",
+      }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: "50%",
+          background: "var(--ec-surface-container-lowest)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          {score}/{max}
+        </div>
+      </div>
+      <div style={{ flex: 1 }}>
+        <p style={{ fontSize: 14, fontWeight: 600, color: "var(--ec-on-surface)" }}>{label}</p>
+        <p style={{ fontSize: 12, color: "var(--ec-on-surface-variant)", marginTop: 2 }}>
+          {pct >= 0.8 ? "Excelente" : pct >= 0.5 ? "Mejorable" : "Requiere atención"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ── Reusable info card ──────────────────────────────────────────────── */
+function InfoCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{
+      borderRadius: 16, padding: "14px 16px",
+      background: "var(--ec-surface-container-low)",
+    }}>
+      <h4 style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--ec-on-surface-variant)", marginBottom: 10 }}>
+        {title}
+      </h4>
+      {children}
+    </div>
+  );
+}
+
+/* ── Check row ───────────────────────────────────────────────────────── */
+function CheckRow({ label, ok, detail }: { label: string; ok: boolean; detail?: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, padding: "3px 0" }}>
+      <span style={{ color: "var(--ec-on-surface-variant)" }}>{label}</span>
+      <span style={{ fontWeight: 600, color: ok ? "#34d399" : "#f87171" }}>
+        {detail || (ok ? "✓" : "✗")}
+      </span>
+    </div>
+  );
+}
+
 export default function NodeDrawer({
-  projectId,
-  nodeKey,
-  url,
-  label,
-  fullPath,
-  screenshotUrl,
-  customImageUrl,
-  pageMeta,
-  annotations,
-  visible,
-  onClose,
-  onAnnotationsChange,
-  onCustomImageChange,
-  availableTags,
-  selectedTagIds,
-  onTagsChange,
-  onTagCreated,
-  onTagDeleted,
-  customName,
-  onNameChange,
-  savedDrawing,
-  onDrawingSave,
-  onRecapture,
+  projectId, nodeKey, url, label, fullPath, screenshotUrl, customImageUrl,
+  pageMeta, annotations, visible, onClose, onAnnotationsChange, onCustomImageChange,
+  availableTags, selectedTagIds, onTagsChange, onTagCreated, onTagDeleted,
+  customName, onNameChange, savedDrawing, onDrawingSave, onRecapture,
 }: NodeDrawerProps) {
   const [localAnnotations, setLocalAnnotations] = useState<Annotation[]>(annotations);
   const [newText, setNewText] = useState("");
@@ -145,24 +148,9 @@ export default function NodeDrawer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Reset UI state when a different node is selected
-  useEffect(() => {
-    setNewText("");
-    setImgError(false);
-    setImageExpanded(false);
-    setActiveTab("info");
-    setFilterType("all");
-    setEditingTitle(false);
-  }, [nodeKey]);
-
-  // Sync data when props change (e.g. polling updates)
-  useEffect(() => {
-    setLocalAnnotations(annotations);
-  }, [annotations]);
-
-  useEffect(() => {
-    setLocalCustomImage(customImageUrl);
-  }, [customImageUrl]);
+  useEffect(() => { setNewText(""); setImgError(false); setImageExpanded(false); setActiveTab("info"); setFilterType("all"); setEditingTitle(false); }, [nodeKey]);
+  useEffect(() => { setLocalAnnotations(annotations); }, [annotations]);
+  useEffect(() => { setLocalCustomImage(customImageUrl); }, [customImageUrl]);
 
   const title = customName || pageMeta?.title || label;
   const description = pageMeta?.description || "";
@@ -175,12 +163,10 @@ export default function NodeDrawer({
   async function handleAddAnnotation(e: React.FormEvent) {
     e.preventDefault();
     if (!newText.trim()) return;
-
     setSaving(true);
     try {
       const res = await fetch(`/api/projects/${projectId}/annotations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: nodeKey, text: newText.trim(), type: newType }),
       });
       const data = await res.json();
@@ -189,15 +175,12 @@ export default function NodeDrawer({
       onAnnotationsChange(nodeKey, updated);
       setNewText("");
       textareaRef.current?.focus();
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   async function handleDelete(annotationId: string) {
     await fetch(`/api/projects/${projectId}/annotations`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
+      method: "DELETE", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: nodeKey, annotationId }),
     });
     const updated = localAnnotations.filter((a) => a.id !== annotationId);
@@ -208,807 +191,416 @@ export default function NodeDrawer({
   async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-
     setUploadingImage(true);
     try {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("key", nodeKey);
-
-      const res = await fetch(`/api/projects/${projectId}/images`, {
-        method: "POST",
-        body: formData,
-      });
+      const res = await fetch(`/api/projects/${projectId}/images`, { method: "POST", body: formData });
       const data = await res.json();
-      if (data.customImageUrl) {
-        setLocalCustomImage(data.customImageUrl);
-        setImgError(false);
-        onCustomImageChange(nodeKey, data.customImageUrl);
-      }
-    } finally {
-      setUploadingImage(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
+      if (data.customImageUrl) { setLocalCustomImage(data.customImageUrl); setImgError(false); onCustomImageChange(nodeKey, data.customImageUrl); }
+    } finally { setUploadingImage(false); if (fileInputRef.current) fileInputRef.current.value = ""; }
   }
 
   function formatDate(iso: string) {
-    return new Date(iso).toLocaleDateString("es-ES", {
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return new Date(iso).toLocaleDateString("es-ES", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
   }
 
-  const handleDrawingSave = useCallback(
-    (dataUrl: string | null) => {
-      onDrawingSave(nodeKey, dataUrl);
-    },
-    [nodeKey, onDrawingSave]
-  );
+  const handleDrawingSave2 = useCallback((dataUrl: string | null) => { onDrawingSave(nodeKey, dataUrl); }, [nodeKey, onDrawingSave]);
 
   async function handleRecapture() {
     if (!url || recapturing) return;
     setRecapturing(true);
-    try {
-      await onRecapture(nodeKey, url);
-    } finally {
-      setRecapturing(false);
-    }
+    try { await onRecapture(nodeKey, url); } finally { setRecapturing(false); }
   }
 
   async function handleSaveTitle() {
     const trimmed = editTitleValue.trim();
-    // If same as current custom name or original title, skip
-    if (trimmed === (customName || pageMeta?.title || label)) {
-      setEditingTitle(false);
-      return;
-    }
+    if (trimmed === (customName || pageMeta?.title || label)) { setEditingTitle(false); return; }
     setSavingTitle(true);
     try {
       await fetch(`/api/projects/${projectId}/page-name`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pageKey: nodeKey, name: trimmed }),
       });
       onNameChange(nodeKey, trimmed);
       setEditingTitle(false);
-    } finally {
-      setSavingTitle(false);
-    }
+    } finally { setSavingTitle(false); }
   }
+
+  const tabStyle = (active: boolean) => ({
+    flex: 1, padding: "12px 0", fontSize: 13, fontWeight: 600 as const, cursor: "pointer" as const,
+    border: "none", background: "transparent",
+    borderBottom: active ? "2px solid var(--ec-secondary)" : "2px solid transparent",
+    color: active ? "var(--ec-secondary)" : "var(--ec-on-surface-variant)",
+    transition: "all 0.15s",
+  });
 
   return (
     <div
-      className={`absolute right-0 top-0 z-50 h-full flex transition-transform duration-300 ease-in-out ${
-        visible ? "translate-x-0" : "translate-x-full"
-      }`}
+      className={`absolute right-0 top-0 z-50 h-full flex ${visible ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"}`}
+      style={{ transition: "transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease" }}
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      {/* Expanded image panel — always rendered when image exists, animated via width */}
+      {/* Expanded image panel */}
       {displayImage && !imgError && (
-        <div
-          className={`h-full bg-gray-900 flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${
-            imageExpanded ? "w-[520px] border-l border-gray-700" : "w-0 border-0"
-          }`}
+        <div className={`h-full flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${imageExpanded ? "w-[520px]" : "w-0"}`}
+          style={{ background: "var(--ec-surface-container-lowest)", borderLeft: imageExpanded ? "1px solid var(--ec-surface-container-high)" : "none" }}
         >
           <div className="min-w-[520px] flex flex-col h-full">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 flex-shrink-0">
-              <span className="text-sm text-gray-300 font-medium truncate">{title}</span>
-              <button
-                onClick={() => setImageExpanded(false)}
-                className="w-7 h-7 rounded-lg hover:bg-gray-700 flex items-center justify-center text-gray-400 hover:text-white transition-colors flex-shrink-0 ml-2"
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--ec-surface-container-high)", background: "var(--ec-surface-container-lowest)" }}>
+              <span style={{ fontSize: 13, color: "var(--ec-on-surface)", fontWeight: 600 }}>{title}</span>
+              <button onClick={() => setImageExpanded(false)}
+                style={{ width: 30, height: 30, borderRadius: 10, border: "none", background: "var(--ec-surface-container-low)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--ec-on-surface-variant)", transition: "background 0.15s" }}
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
-            <DrawingCanvas
-              imageUrl={displayImage}
-              savedDrawing={savedDrawing}
-              onSave={handleDrawingSave}
-            />
+            <DrawingCanvas imageUrl={displayImage} savedDrawing={savedDrawing} onSave={handleDrawingSave2} />
           </div>
         </div>
       )}
 
       {/* Main drawer */}
-      <div className="w-[400px] h-full bg-white shadow-2xl flex flex-col border-l border-gray-200">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
-          <span className="text-sm font-semibold text-gray-800 truncate">{title}</span>
+      <div style={{
+        width: 400, height: "100%", display: "flex", flexDirection: "column",
+        background: "var(--ec-surface-container-lowest)",
+        boxShadow: "-8px 0 32px rgba(26,28,30,0.08)",
+        borderLeft: "1px solid var(--ec-surface-container-high)",
+      }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--ec-surface-container-high)", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--ec-secondary)", flexShrink: 0 }} />
+            <span style={{ fontSize: 14, fontWeight: 700, color: "var(--ec-on-surface)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
+          </div>
+          <button onClick={onClose}
+            style={{ width: 32, height: 32, borderRadius: 12, border: "none", background: "var(--ec-surface-container-low)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--ec-on-surface-variant)", flexShrink: 0, marginLeft: 8, transition: "background 0.15s" }}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
         </div>
-        <button
-          onClick={onClose}
-          className="w-7 h-7 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 ml-2"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-gray-100 px-5 flex-shrink-0 bg-gray-50">
-        <button
-          onClick={() => setActiveTab("info")}
-          className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === "info"
-              ? "border-blue-500 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          Info
-        </button>
-        <button
-          onClick={() => setActiveTab("seo")}
-          className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === "seo"
-              ? "border-blue-500 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          SEO
-        </button>
-        <button
-          onClick={() => setActiveTab("a11y")}
-          className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === "a11y"
-              ? "border-blue-500 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          A11y
-        </button>
-      </div>
+        {/* Tabs */}
+        <div style={{ display: "flex", borderBottom: "1px solid var(--ec-surface-container-high)", padding: "0 20px", flexShrink: 0 }}>
+          <button onClick={() => setActiveTab("info")} style={tabStyle(activeTab === "info")}>Info</button>
+          <button onClick={() => setActiveTab("seo")} style={tabStyle(activeTab === "seo")}>SEO</button>
+          <button onClick={() => setActiveTab("a11y")} style={tabStyle(activeTab === "a11y")}>A11y</button>
+        </div>
 
-      {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto">
-        {activeTab === "info" && (
-          <>
-            {/* Screenshot / Custom image */}
-            <div className="bg-gray-50 border-b border-gray-100 relative group">
-              {displayImage && !imgError ? (
-                <img
-                  src={displayImage}
-                  alt={title}
-                  className="w-full object-cover object-top max-h-52 cursor-zoom-in"
-                  onError={() => setImgError(true)}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setImageExpanded(true);
-                  }}
-                  title="Ver captura completa"
-                />
-              ) : (
-                <div className="h-36 flex items-center justify-center text-gray-300">
-                  <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                </div>
-              )}
-              {/* Recapture + Image upload overlay */}
-              <div className="absolute bottom-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                {url && (
-                  <button
-                    onClick={handleRecapture}
-                    disabled={recapturing}
-                    className="px-2.5 py-1.5 bg-black/60 hover:bg-black/80 text-white text-xs rounded-lg flex items-center gap-1.5 disabled:opacity-50"
-                    title="Recapturar página"
-                  >
-                    {recapturing ? (
-                      <>
-                        <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
-                        Capturando...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Recapturar
-                      </>
-                    )}
-                  </button>
-                )}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadingImage}
-                className="px-2.5 py-1.5 bg-black/60 hover:bg-black/80 text-white text-xs rounded-lg flex items-center gap-1.5 disabled:opacity-50"
-              >
-                {uploadingImage ? (
-                  <>
-                    <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
-                    Subiendo...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                    </svg>
-                    Cambiar imagen
-                  </>
-                )}
-              </button>
-              </div>{/* end button group */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleImageUpload}
-              />
-            </div>
-
-            {/* Page info */}
-            <div className="px-5 py-4 border-b border-gray-100">
-              {url && (
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-blue-500 hover:underline break-all block mb-2"
-                >
-                  {url} ↗
-                </a>
-              )}
-              {editingTitle ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={editTitleValue}
-                    onChange={(e) => setEditTitleValue(e.target.value)}
-                    onBlur={handleSaveTitle}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleSaveTitle();
-                      if (e.key === "Escape") setEditingTitle(false);
-                    }}
-                    disabled={savingTitle}
-                    autoFocus
-                    className="flex-1 px-2 py-1 text-base font-semibold text-gray-900 border border-blue-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        {/* Scrollable content */}
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {activeTab === "info" && (
+            <>
+              {/* Screenshot */}
+              <div style={{ position: "relative", background: "var(--ec-surface-container-low)", borderBottom: "1px solid var(--ec-surface-container-high)" }} className="group">
+                {displayImage && !imgError ? (
+                  <img src={displayImage} alt={title}
+                    style={{ width: "100%", objectFit: "cover", objectPosition: "top", maxHeight: 210, cursor: "zoom-in" }}
+                    onError={() => setImgError(true)}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setImageExpanded(true); }}
                   />
-                  {savingTitle && <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 group/title">
-                  <p className="text-base font-semibold text-gray-900 flex-1">{title}</p>
-                  <button
-                    onClick={() => {
-                      setEditTitleValue(title);
-                      setEditingTitle(true);
-                    }}
-                    className="opacity-0 group-hover/title:opacity-100 transition-opacity text-gray-400 hover:text-gray-600 flex-shrink-0"
-                    title="Editar nombre"
+                ) : (
+                  <div style={{ height: 140, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--ec-surface-container-high)" }}>
+                    <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                  </div>
+                )}
+                <div className="absolute bottom-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {url && (
+                    <button onClick={handleRecapture} disabled={recapturing}
+                      style={{ padding: "6px 10px", borderRadius: 10, border: "none", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, background: "rgba(0,0,0,0.6)", color: "#fff" }}
+                    >
+                      {recapturing ? <><div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />Capturando...</> : <><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Recapturar</>}
+                    </button>
+                  )}
+                  <button onClick={() => fileInputRef.current?.click()} disabled={uploadingImage}
+                    style={{ padding: "6px 10px", borderRadius: 10, border: "none", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, background: "rgba(0,0,0,0.6)", color: "#fff" }}
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
+                    {uploadingImage ? <><div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />Subiendo...</> : <><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>Cambiar imagen</>}
                   </button>
                 </div>
-              )}
-              {description ? (
-                <p className="text-sm text-gray-500 mt-1 leading-relaxed">{description}</p>
-              ) : (
-                <p className="text-xs text-gray-300 mt-1 italic">Sin descripción meta</p>
-              )}
-              <p className="text-xs text-gray-400 mt-2 font-mono">{fullPath}</p>
-
-              {/* Tags */}
-              <div className="mt-3">
-                <TagSelector
-                  projectId={projectId}
-                  pageKey={nodeKey}
-                  availableTags={availableTags}
-                  selectedTagIds={selectedTagIds}
-                  onTagsChange={onTagsChange}
-                  onTagCreated={onTagCreated}
-                  onTagDeleted={onTagDeleted}
-                />
+                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
               </div>
-            </div>
 
-            {/* Annotations list */}
-            <div className="px-5 py-4">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
-                Anotaciones ({localAnnotations.length})
-              </h3>
-
-              {localAnnotations.length > 0 && (
-                <div className="flex gap-1.5 mb-3 flex-wrap">
-                  <button
-                    onClick={() => setFilterType("all")}
-                    className={`text-xs px-2 py-1.5 rounded-lg border transition-all font-medium ${
-                      filterType === "all"
-                        ? "bg-blue-50 text-blue-700 border-blue-200"
-                        : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-                    }`}
-                  >
-                    Todos ({localAnnotations.length})
-                  </button>
-                  {(Object.keys(TYPE_CONFIG) as AnnotationType[]).map((type) => {
-                    const count = localAnnotations.filter((a) => a.type === type).length;
-                    const cfg = TYPE_CONFIG[type];
-                    return (
-                      <button
-                        key={type}
-                        onClick={() => setFilterType(type)}
-                        className={`text-xs px-2 py-1.5 rounded-lg border transition-all font-medium flex items-center gap-1 ${
-                          filterType === type
-                            ? `${cfg.bg} ${cfg.color} border-current`
-                            : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-                        }`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-                        {cfg.label} ({count})
-                      </button>
-                    );
-                  })}
+              {/* Page info */}
+              <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--ec-surface-container-high)" }}>
+                {url && (
+                  <a href={url} target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize: 12, color: "var(--ec-secondary)", wordBreak: "break-all", display: "block", marginBottom: 8, textDecoration: "none" }}
+                  >{url} ↗</a>
+                )}
+                {editingTitle ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input type="text" value={editTitleValue}
+                      onChange={(e) => setEditTitleValue(e.target.value)}
+                      onBlur={handleSaveTitle}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleSaveTitle(); if (e.key === "Escape") setEditingTitle(false); }}
+                      disabled={savingTitle} autoFocus
+                      style={{ flex: 1, padding: "6px 12px", fontSize: 15, fontWeight: 700, color: "var(--ec-on-surface)", border: "none", borderRadius: 12, background: "var(--ec-surface-container-low)", outline: "none", boxShadow: "0 0 0 2px rgba(90,59,221,0.25)" }}
+                    />
+                    {savingTitle && <div className="w-4 h-4 border-2 border-[#5a3bdd] border-t-transparent rounded-full animate-spin flex-shrink-0" />}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 group/title">
+                    <p style={{ fontSize: 15, fontWeight: 700, color: "var(--ec-on-surface)", flex: 1 }}>{title}</p>
+                    <button onClick={() => { setEditTitleValue(title); setEditingTitle(true); }}
+                      className="opacity-0 group-hover/title:opacity-100 transition-opacity"
+                      style={{ border: "none", background: "transparent", cursor: "pointer", color: "var(--ec-on-surface-variant)", flexShrink: 0 }}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    </button>
+                  </div>
+                )}
+                {description ? (
+                  <p style={{ fontSize: 13, color: "var(--ec-on-surface-variant)", marginTop: 4, lineHeight: 1.5 }}>{description}</p>
+                ) : (
+                  <p style={{ fontSize: 12, color: "var(--ec-surface-container-high)", marginTop: 4, fontStyle: "italic" }}>Sin descripción meta</p>
+                )}
+                <p style={{ fontSize: 11, color: "var(--ec-on-surface-variant)", marginTop: 8, fontFamily: "monospace" }}>{fullPath}</p>
+                <div style={{ marginTop: 12 }}>
+                  <TagSelector projectId={projectId} pageKey={nodeKey} availableTags={availableTags} selectedTagIds={selectedTagIds} onTagsChange={onTagsChange} onTagCreated={onTagCreated} onTagDeleted={onTagDeleted} />
                 </div>
-              )}
+              </div>
 
-              {localAnnotations.length === 0 ? (
-                <p className="text-sm text-gray-400 italic text-center py-4">
-                  Sin anotaciones. Añade la primera abajo.
-                </p>
-              ) : (
-                <ul className="space-y-2 mb-4">
-                  {localAnnotations
-                    .filter((ann) => filterType === "all" || ann.type === filterType)
-                    .map((ann) => {
+              {/* Annotations */}
+              <div style={{ padding: "16px 20px" }}>
+                <h3 style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--ec-on-surface-variant)", marginBottom: 12 }}>
+                  Anotaciones ({localAnnotations.length})
+                </h3>
+
+                {localAnnotations.length > 0 && (
+                  <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+                    <button onClick={() => setFilterType("all")}
+                      style={{ padding: "5px 10px", borderRadius: 9999, fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer", background: filterType === "all" ? "var(--ec-secondary)" : "var(--ec-surface-container-low)", color: filterType === "all" ? "#fff" : "var(--ec-on-surface-variant)", transition: "all 0.15s" }}
+                    >Todos ({localAnnotations.length})</button>
+                    {(Object.keys(TYPE_CONFIG) as AnnotationType[]).map((type) => {
+                      const count = localAnnotations.filter((a) => a.type === type).length;
+                      const cfg = TYPE_CONFIG[type];
+                      return (
+                        <button key={type} onClick={() => setFilterType(type)}
+                          style={{ padding: "5px 10px", borderRadius: 9999, fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, background: filterType === type ? "var(--ec-secondary)" : "var(--ec-surface-container-low)", color: filterType === type ? "#fff" : "var(--ec-on-surface-variant)", transition: "all 0.15s" }}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                          {cfg.label} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {localAnnotations.length === 0 ? (
+                  <p style={{ fontSize: 13, color: "var(--ec-on-surface-variant)", textAlign: "center", padding: "24px 0", fontStyle: "italic" }}>
+                    Sin anotaciones. Añade la primera abajo.
+                  </p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                    {localAnnotations.filter((ann) => filterType === "all" || ann.type === filterType).map((ann) => {
                       const cfg = TYPE_CONFIG[ann.type];
                       return (
-                        <li
-                          key={ann.id}
-                          className={`rounded-lg border px-3 py-2.5 ${cfg.bg} group`}
+                        <div key={ann.id} className="group"
+                          style={{ borderRadius: 14, padding: "10px 14px", background: "var(--ec-surface-container-low)" }}
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-start gap-2 min-w-0">
-                              <span className={`inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-full flex-shrink-0 mt-0.5 ${cfg.color}`}>
+                          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, minWidth: 0 }}>
+                              <span className={cfg.color} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, flexShrink: 0, marginTop: 2 }}>
                                 <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
                                 {cfg.label}
                               </span>
-                              <p className="text-sm text-gray-700 leading-relaxed">{ann.text}</p>
+                              <p style={{ fontSize: 13, color: "var(--ec-on-surface)", lineHeight: 1.5 }}>{ann.text}</p>
                             </div>
-                            <button
-                              onClick={() => handleDelete(ann.id)}
-                              className="text-gray-300 hover:text-red-500 transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100 mt-0.5"
-                              title="Eliminar"
+                            <button onClick={() => handleDelete(ann.id)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity"
+                              style={{ border: "none", background: "transparent", cursor: "pointer", color: "var(--ec-on-surface-variant)", flexShrink: 0, marginTop: 2, padding: 0 }}
                             >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                             </button>
                           </div>
-                          <p className="text-xs text-gray-400 mt-1.5 ml-0">{formatDate(ann.createdAt)}</p>
-                        </li>
+                          <p style={{ fontSize: 10, color: "var(--ec-on-surface-variant)", marginTop: 6 }}>{formatDate(ann.createdAt)}</p>
+                        </div>
                       );
                     })}
-                </ul>
-              )}
-            </div>
-          </>
-        )}
-        {activeTab === "seo" && (
-          <>
-            {seo ? (
-              <div className="px-5 py-4 space-y-5">
-                {/* SEO Score */}
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-16 h-16 rounded-full flex items-center justify-center font-bold text-lg ${
-                      seoScore! >= 8
-                        ? "bg-green-100 text-green-700"
-                        : seoScore! >= 5
-                        ? "bg-amber-100 text-amber-700"
-                        : "bg-red-100 text-red-700"
-                    }`}
-                  >
-                    {seoScore}/10
                   </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-gray-700">Puntuación SEO</p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {seoScore! >= 8 ? "Excelente" : seoScore! >= 5 ? "Mejorable" : "Requiere atención"}
-                    </p>
-                  </div>
-                </div>
+                )}
+              </div>
+            </>
+          )}
 
-                {/* Title Analysis */}
-                <div className="border border-gray-200 rounded-lg p-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Título</h4>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-600">{seo.titleLength} caracteres</span>
-                      {seo.titleLength >= 30 && seo.titleLength <= 60 ? (
-                        <span className="text-xs font-medium text-green-600">✓ Correcto</span>
-                      ) : (
-                        <span className="text-xs font-medium text-red-600">✗ 30-60 chars</span>
-                      )}
-                    </div>
-                    {title && <p className="text-xs text-gray-600 bg-gray-50 p-2 rounded truncate" title={title}>{title}</p>}
-                  </div>
-                </div>
+          {activeTab === "seo" && (
+            <>
+              {seo ? (
+                <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: 16 }}>
+                  <ScoreBadge score={seoScore!} max={10} label="Puntuación SEO" />
 
-                {/* Description Analysis */}
-                <div className="border border-gray-200 rounded-lg p-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Descripción</h4>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-600">{seo.descriptionLength} caracteres</span>
-                      {seo.descriptionLength >= 120 && seo.descriptionLength <= 160 ? (
-                        <span className="text-xs font-medium text-green-600">✓ Correcto</span>
-                      ) : (
-                        <span className="text-xs font-medium text-red-600">✗ 120-160 chars</span>
-                      )}
-                    </div>
-                    {description && <p className="text-xs text-gray-600 bg-gray-50 p-2 rounded line-clamp-2" title={description}>{description}</p>}
-                  </div>
-                </div>
+                  <InfoCard title="Título">
+                    <CheckRow label={`${seo.titleLength} caracteres`} ok={seo.titleLength >= 30 && seo.titleLength <= 60} detail={seo.titleLength >= 30 && seo.titleLength <= 60 ? "✓ Correcto" : "✗ 30-60 chars"} />
+                    {title && <p style={{ fontSize: 12, color: "var(--ec-on-surface-variant)", background: "var(--ec-surface-container)", padding: "8px 10px", borderRadius: 10, marginTop: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={title}>{title}</p>}
+                  </InfoCard>
 
-                {/* Heading Structure */}
-                <div className="border border-gray-200 rounded-lg p-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Estructura de Encabezados</h4>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">H1:</span>
-                      <span className={seo.h1.length === 1 ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
-                        {seo.h1.length} {seo.h1.length === 1 ? "(óptimo)" : "(requiere 1)"}
-                      </span>
-                    </div>
+                  <InfoCard title="Descripción">
+                    <CheckRow label={`${seo.descriptionLength} caracteres`} ok={seo.descriptionLength >= 120 && seo.descriptionLength <= 160} detail={seo.descriptionLength >= 120 && seo.descriptionLength <= 160 ? "✓ Correcto" : "✗ 120-160 chars"} />
+                    {description && <p style={{ fontSize: 12, color: "var(--ec-on-surface-variant)", background: "var(--ec-surface-container)", padding: "8px 10px", borderRadius: 10, marginTop: 8, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} title={description}>{description}</p>}
+                  </InfoCard>
+
+                  <InfoCard title="Estructura de Encabezados">
+                    <CheckRow label="H1" ok={seo.h1.length === 1} detail={`${seo.h1.length} ${seo.h1.length === 1 ? "(óptimo)" : "(requiere 1)"}`} />
                     {seo.h1.length > 0 && (
-                      <div className="text-gray-500 bg-gray-50 p-2 rounded">
-                        {seo.h1.map((h, i) => (
-                          <div key={i} className="truncate" title={h}>→ {h || "(vacío)"}</div>
-                        ))}
+                      <div style={{ fontSize: 12, color: "var(--ec-on-surface-variant)", background: "var(--ec-surface-container)", padding: "8px 10px", borderRadius: 10, marginTop: 6 }}>
+                        {seo.h1.map((h, i) => <div key={i} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={h}>→ {h || "(vacío)"}</div>)}
                       </div>
                     )}
-                    <div className="flex items-center justify-between pt-2">
-                      <span className="text-gray-600">H2: {seo.h2Count}</span>
-                      <span className="text-gray-600">H3: {seo.h3Count}</span>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--ec-on-surface-variant)", marginTop: 8 }}>
+                      <span>H2: {seo.h2Count}</span><span>H3: {seo.h3Count}</span>
                     </div>
-                  </div>
-                </div>
+                  </InfoCard>
 
-                {/* OG Tags */}
-                <div className="border border-gray-200 rounded-lg p-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Etiquetas OG</h4>
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">og:title</span>
-                      <span className={seo.hasOgTitle ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
-                        {seo.hasOgTitle ? "✓" : "✗"}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">og:description</span>
-                      <span className={seo.hasOgDescription ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
-                        {seo.hasOgDescription ? "✓" : "✗"}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">og:image</span>
-                      <span className={seo.hasOgImage ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
-                        {seo.hasOgImage ? "✓" : "✗"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                  <InfoCard title="Etiquetas OG">
+                    <CheckRow label="og:title" ok={seo.hasOgTitle} />
+                    <CheckRow label="og:description" ok={seo.hasOgDescription} />
+                    <CheckRow label="og:image" ok={seo.hasOgImage} />
+                  </InfoCard>
 
-                {/* Canonical & Links */}
-                <div className="border border-gray-200 rounded-lg p-3 space-y-3">
-                  <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Canonical</h4>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-gray-600">{seo.hasCanonical ? "Presente" : "Ausente"}</span>
-                      <span className={seo.hasCanonical ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
-                        {seo.hasCanonical ? "✓" : "✗"}
-                      </span>
-                    </div>
-                    {seo.canonicalUrl && (
-                      <p className="text-xs text-gray-500 bg-gray-50 p-2 rounded mt-1.5 truncate" title={seo.canonicalUrl}>
-                        {seo.canonicalUrl}
-                      </p>
-                    )}
-                  </div>
-                </div>
+                  <InfoCard title="Canonical">
+                    <CheckRow label={seo.hasCanonical ? "Presente" : "Ausente"} ok={seo.hasCanonical} />
+                    {seo.canonicalUrl && <p style={{ fontSize: 12, color: "var(--ec-on-surface-variant)", background: "var(--ec-surface-container)", padding: "8px 10px", borderRadius: 10, marginTop: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={seo.canonicalUrl}>{seo.canonicalUrl}</p>}
+                  </InfoCard>
 
-                {/* Images */}
-                <div className="border border-gray-200 rounded-lg p-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Imágenes</h4>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Total</span>
-                      <span className="text-gray-700 font-medium">{seo.totalImages}</span>
-                    </div>
-                    {seo.totalImages > 0 && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-600">Sin alt</span>
-                        <span className={seo.imgWithoutAlt === 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
-                          {seo.imgWithoutAlt}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                  <InfoCard title="Imágenes">
+                    <CheckRow label="Total" ok={true} detail={String(seo.totalImages)} />
+                    {seo.totalImages > 0 && <CheckRow label="Sin alt" ok={seo.imgWithoutAlt === 0} detail={String(seo.imgWithoutAlt)} />}
+                  </InfoCard>
 
-                {/* Links */}
-                <div className="border border-gray-200 rounded-lg p-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Enlaces</h4>
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Internos</span>
-                      <span className="text-gray-700 font-medium">{seo.internalLinks}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Externos</span>
-                      <span className="text-gray-700 font-medium">{seo.externalLinks}</span>
-                    </div>
-                  </div>
-                </div>
+                  <InfoCard title="Enlaces">
+                    <CheckRow label="Internos" ok={true} detail={String(seo.internalLinks)} />
+                    <CheckRow label="Externos" ok={true} detail={String(seo.externalLinks)} />
+                  </InfoCard>
 
-                {/* Word Count */}
-                <div className="border border-gray-200 rounded-lg p-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Contenido</h4>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-600">Palabras</span>
-                    <span className={seo.wordCount > 300 ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
-                      {seo.wordCount} {seo.wordCount > 300 ? "✓" : "< 300"}
-                    </span>
-                  </div>
+                  <InfoCard title="Contenido">
+                    <CheckRow label="Palabras" ok={seo.wordCount > 300} detail={`${seo.wordCount} ${seo.wordCount > 300 ? "✓" : "< 300"}`} />
+                  </InfoCard>
                 </div>
-              </div>
-            ) : (
-              <div className="px-5 py-12 text-center">
-                <p className="text-sm text-gray-400">Sin datos SEO disponibles</p>
-                <p className="text-xs text-gray-300 mt-2">Ejecuta un análisis de captura de pantallas para obtener datos SEO</p>
-              </div>
-            )}
-          </>
-        )}
-        {activeTab === "a11y" && (
-          <>
-            {a11y ? (
-              <div className="px-5 py-4 space-y-5">
-                {/* A11y Score */}
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-16 h-16 rounded-full flex items-center justify-center font-bold text-lg ${
-                      a11yScore! >= 8
-                        ? "bg-green-100 text-green-700"
-                        : a11yScore! >= 5
-                        ? "bg-amber-100 text-amber-700"
-                        : "bg-red-100 text-red-700"
-                    }`}
-                  >
-                    {a11yScore}/10
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-gray-700">Accesibilidad</p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {a11yScore! >= 8 ? "Buen nivel" : a11yScore! >= 5 ? "Mejorable" : "Requiere atención"}
-                    </p>
-                  </div>
+              ) : (
+                <div style={{ padding: "48px 20px", textAlign: "center" }}>
+                  <p style={{ fontSize: 13, color: "var(--ec-on-surface-variant)" }}>Sin datos SEO disponibles</p>
+                  <p style={{ fontSize: 12, color: "var(--ec-surface-container-high)", marginTop: 8 }}>Ejecuta un análisis para obtener datos SEO</p>
                 </div>
+              )}
+            </>
+          )}
 
-                {/* Lang attribute */}
-                <div className="border border-gray-200 rounded-lg p-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Idioma</h4>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-600">Atributo lang en &lt;html&gt;</span>
-                    <span className={!a11y.missingLang ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
-                      {!a11y.missingLang ? "✓" : "✗ Falta"}
-                    </span>
-                  </div>
-                </div>
+          {activeTab === "a11y" && (
+            <>
+              {a11y ? (
+                <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: 16 }}>
+                  <ScoreBadge score={a11yScore!} max={10} label="Accesibilidad" />
 
-                {/* Landmarks */}
-                <div className="border border-gray-200 rounded-lg p-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Landmarks</h4>
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">&lt;main&gt;</span>
-                      <span className={!a11y.missingMainLandmark ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
-                        {!a11y.missingMainLandmark ? "✓" : "✗ Falta"}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">&lt;nav&gt;</span>
-                      <span className={!a11y.missingNavLandmark ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
-                        {!a11y.missingNavLandmark ? "✓" : "✗ Falta"}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Skip link</span>
-                      <span className={!a11y.missingSkipLink ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
-                        {!a11y.missingSkipLink ? "✓" : "✗ Falta"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                  <InfoCard title="Idioma">
+                    <CheckRow label="Atributo lang en <html>" ok={!a11y.missingLang} detail={!a11y.missingLang ? "✓" : "✗ Falta"} />
+                  </InfoCard>
 
-                {/* Heading hierarchy */}
-                <div className="border border-gray-200 rounded-lg p-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Jerarquía de Encabezados</h4>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Orden correcto</span>
-                      <span className={a11y.headingOrderValid ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
-                        {a11y.headingOrderValid ? "✓" : "✗ Saltos en la jerarquía"}
-                      </span>
-                    </div>
+                  <InfoCard title="Landmarks">
+                    <CheckRow label="<main>" ok={!a11y.missingMainLandmark} detail={!a11y.missingMainLandmark ? "✓" : "✗ Falta"} />
+                    <CheckRow label="<nav>" ok={!a11y.missingNavLandmark} detail={!a11y.missingNavLandmark ? "✓" : "✗ Falta"} />
+                    <CheckRow label="Skip link" ok={!a11y.missingSkipLink} detail={!a11y.missingSkipLink ? "✓" : "✗ Falta"} />
+                  </InfoCard>
+
+                  <InfoCard title="Jerarquía de Encabezados">
+                    <CheckRow label="Orden correcto" ok={a11y.headingOrderValid} detail={a11y.headingOrderValid ? "✓" : "✗ Saltos en la jerarquía"} />
                     {a11y.headingSequence.length > 0 && (
-                      <div className="text-gray-500 bg-gray-50 p-2 rounded flex flex-wrap gap-1">
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8, background: "var(--ec-surface-container)", padding: "8px 10px", borderRadius: 10 }}>
                         {a11y.headingSequence.map((level, i) => (
-                          <span
-                            key={i}
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
-                              i > 0 && level > a11y.headingSequence[i - 1] + 1
-                                ? "bg-red-100 text-red-700"
-                                : "bg-gray-200 text-gray-600"
-                            }`}
-                          >
+                          <span key={i} style={{ padding: "2px 6px", borderRadius: 6, fontSize: 10, fontFamily: "monospace", background: i > 0 && level > a11y.headingSequence[i - 1] + 1 ? "rgba(248,113,113,0.15)" : "var(--ec-surface-container-low)", color: i > 0 && level > a11y.headingSequence[i - 1] + 1 ? "#f87171" : "var(--ec-on-surface-variant)" }}>
                             H{level}
                           </span>
                         ))}
                       </div>
                     )}
-                  </div>
+                  </InfoCard>
+
+                  <InfoCard title="Imágenes">
+                    <CheckRow label="Total" ok={true} detail={String(a11y.totalImages)} />
+                    {a11y.totalImages > 0 && <CheckRow label="Sin atributo alt" ok={a11y.imgWithoutAlt === 0} detail={a11y.imgWithoutAlt === 0 ? "✓ Ninguna" : `✗ ${a11y.imgWithoutAlt}`} />}
+                  </InfoCard>
+
+                  <InfoCard title="Elementos Interactivos">
+                    {a11y.totalButtons > 0 && <CheckRow label="Botones sin label" ok={a11y.buttonsWithoutLabel === 0} detail={a11y.buttonsWithoutLabel === 0 ? "✓" : `✗ ${a11y.buttonsWithoutLabel}/${a11y.totalButtons}`} />}
+                    {a11y.totalInputs > 0 && <CheckRow label="Inputs sin label" ok={a11y.inputsWithoutLabel === 0} detail={a11y.inputsWithoutLabel === 0 ? "✓" : `✗ ${a11y.inputsWithoutLabel}/${a11y.totalInputs}`} />}
+                    {a11y.totalLinks > 0 && <CheckRow label="Enlaces sin texto" ok={a11y.linksWithoutText === 0} detail={a11y.linksWithoutText === 0 ? "✓" : `✗ ${a11y.linksWithoutText}/${a11y.totalLinks}`} />}
+                  </InfoCard>
+
+                  <InfoCard title="Contraste">
+                    <CheckRow label="Textos con bajo contraste" ok={a11y.lowContrastTexts === 0} detail={a11y.lowContrastTexts === 0 ? "✓ Ninguno" : `~${a11y.lowContrastTexts}`} />
+                  </InfoCard>
+
+                  {a11y.autoplaying > 0 && (
+                    <InfoCard title="Media">
+                      <CheckRow label="Autoplay detectado" ok={false} detail={`✗ ${a11y.autoplaying}`} />
+                    </InfoCard>
+                  )}
+
+                  {a11y.totalFormFields > 0 && (
+                    <InfoCard title="Formularios">
+                      <CheckRow label="Campos sin autocomplete" ok={a11y.formFieldsWithoutAutocomplete === 0} detail={a11y.formFieldsWithoutAutocomplete === 0 ? "✓" : `${a11y.formFieldsWithoutAutocomplete}/${a11y.totalFormFields}`} />
+                    </InfoCard>
+                  )}
                 </div>
-
-                {/* Images */}
-                <div className="border border-gray-200 rounded-lg p-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Imágenes</h4>
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Total</span>
-                      <span className="text-gray-700 font-medium">{a11y.totalImages}</span>
-                    </div>
-                    {a11y.totalImages > 0 && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-600">Sin atributo alt</span>
-                        <span className={a11y.imgWithoutAlt === 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
-                          {a11y.imgWithoutAlt === 0 ? "✓ Ninguna" : `✗ ${a11y.imgWithoutAlt}`}
-                        </span>
-                      </div>
-                    )}
-                  </div>
+              ) : (
+                <div style={{ padding: "48px 20px", textAlign: "center" }}>
+                  <p style={{ fontSize: 13, color: "var(--ec-on-surface-variant)" }}>Sin datos de accesibilidad</p>
+                  <p style={{ fontSize: 12, color: "var(--ec-surface-container-high)", marginTop: 8 }}>Ejecuta un análisis para obtener datos</p>
                 </div>
+              )}
+            </>
+          )}
+        </div>
 
-                {/* Interactive elements */}
-                <div className="border border-gray-200 rounded-lg p-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Elementos Interactivos</h4>
-                  <div className="space-y-1.5 text-xs">
-                    {a11y.totalButtons > 0 && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-600">Botones sin label</span>
-                        <span className={a11y.buttonsWithoutLabel === 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
-                          {a11y.buttonsWithoutLabel === 0 ? "✓" : `✗ ${a11y.buttonsWithoutLabel}/${a11y.totalButtons}`}
-                        </span>
-                      </div>
-                    )}
-                    {a11y.totalInputs > 0 && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-600">Inputs sin label</span>
-                        <span className={a11y.inputsWithoutLabel === 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
-                          {a11y.inputsWithoutLabel === 0 ? "✓" : `✗ ${a11y.inputsWithoutLabel}/${a11y.totalInputs}`}
-                        </span>
-                      </div>
-                    )}
-                    {a11y.totalLinks > 0 && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-600">Enlaces sin texto</span>
-                        <span className={a11y.linksWithoutText === 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
-                          {a11y.linksWithoutText === 0 ? "✓" : `✗ ${a11y.linksWithoutText}/${a11y.totalLinks}`}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Contrast */}
-                <div className="border border-gray-200 rounded-lg p-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Contraste</h4>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-600">Textos con bajo contraste</span>
-                    <span className={a11y.lowContrastTexts === 0 ? "text-green-600 font-medium" : a11y.lowContrastTexts < 3 ? "text-amber-600 font-medium" : "text-red-600 font-medium"}>
-                      {a11y.lowContrastTexts === 0 ? "✓ Ninguno" : `~${a11y.lowContrastTexts}`}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Media */}
-                {a11y.autoplaying > 0 && (
-                  <div className="border border-red-200 rounded-lg p-3 bg-red-50">
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-red-700 mb-2">Media</h4>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-red-600">Autoplay detectado</span>
-                      <span className="text-red-600 font-medium">✗ {a11y.autoplaying}</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Formularios */}
-                {a11y.totalFormFields > 0 && (
-                  <div className="border border-gray-200 rounded-lg p-3">
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Formularios</h4>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-gray-600">Campos sin autocomplete</span>
-                      <span className={a11y.formFieldsWithoutAutocomplete === 0 ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
-                        {a11y.formFieldsWithoutAutocomplete === 0 ? "✓" : `${a11y.formFieldsWithoutAutocomplete}/${a11y.totalFormFields}`}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="px-5 py-12 text-center">
-                <p className="text-sm text-gray-400">Sin datos de accesibilidad</p>
-                <p className="text-xs text-gray-300 mt-2">Ejecuta un análisis de captura de pantallas para obtener datos de accesibilidad</p>
-              </div>
-            )}
-          </>
-        )}
+        {/* New annotation form */}
+        <div style={{ borderTop: "1px solid var(--ec-surface-container-high)", padding: "16px 20px", flexShrink: 0, background: "var(--ec-surface-container-low)" }}>
+          <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--ec-on-surface-variant)", marginBottom: 10 }}>
+            Nueva anotación
+          </p>
+          <form onSubmit={handleAddAnnotation} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", gap: 6 }}>
+              {(Object.keys(TYPE_CONFIG) as AnnotationType[]).map((t) => {
+                const cfg = TYPE_CONFIG[t];
+                const active = newType === t;
+                return (
+                  <button key={t} type="button" onClick={() => setNewType(t)}
+                    style={{
+                      flex: 1, padding: "7px 0", borderRadius: 9999, fontSize: 12, fontWeight: 600,
+                      border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                      background: active ? "var(--ec-secondary)" : "var(--ec-surface-container-lowest)",
+                      color: active ? "#fff" : "var(--ec-on-surface-variant)",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-white" : cfg.dot}`} />
+                    {cfg.label}
+                  </button>
+                );
+              })}
+            </div>
+            <textarea ref={textareaRef} value={newText} onChange={(e) => setNewText(e.target.value)}
+              placeholder="Escribe tu anotación..." rows={3}
+              style={{ width: "100%", padding: "10px 14px", fontSize: 13, borderRadius: 14, border: "none", resize: "none", background: "var(--ec-surface-container-lowest)", color: "var(--ec-on-surface)", outline: "none", fontFamily: "inherit" }}
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleAddAnnotation(e as unknown as React.FormEvent); }}
+            />
+            <button type="submit" disabled={saving || !newText.trim()}
+              style={{
+                width: "100%", padding: "10px 0", borderRadius: 9999, border: "none",
+                fontSize: 13, fontWeight: 700, cursor: "pointer",
+                background: saving || !newText.trim() ? "var(--ec-surface-container-high)" : "var(--ec-primary-container)",
+                color: saving || !newText.trim() ? "var(--ec-on-surface-variant)" : "#535c00",
+                transition: "all 0.15s",
+              }}
+            >
+              {saving ? "Guardando..." : "Guardar anotación"}
+            </button>
+            <p style={{ fontSize: 11, color: "var(--ec-on-surface-variant)", textAlign: "center" }}>⌘+Enter para guardar rápido</p>
+          </form>
+        </div>
       </div>
-
-      {/* New annotation form - fixed at bottom */}
-      <div className="border-t border-gray-100 px-5 py-4 flex-shrink-0 bg-gray-50">
-        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
-          Nueva anotación
-        </p>
-        <form onSubmit={handleAddAnnotation} className="space-y-3">
-          {/* Type selector */}
-          <div className="flex gap-2">
-            {(Object.keys(TYPE_CONFIG) as AnnotationType[]).map((t) => {
-              const cfg = TYPE_CONFIG[t];
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setNewType(t)}
-                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                    newType === t
-                      ? `${cfg.bg} ${cfg.color} border-current`
-                      : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
-                  }`}
-                >
-                  <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${cfg.dot}`} />
-                  {cfg.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Textarea */}
-          <textarea
-            ref={textareaRef}
-            value={newText}
-            onChange={(e) => setNewText(e.target.value)}
-            placeholder="Escribe tu anotación..."
-            rows={3}
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                handleAddAnnotation(e as unknown as React.FormEvent);
-              }
-            }}
-          />
-
-          <button
-            type="submit"
-            disabled={saving || !newText.trim()}
-            className="w-full py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            {saving ? "Guardando..." : "Guardar anotación"}
-          </button>
-          <p className="text-xs text-gray-400 text-center">⌘+Enter para guardar rápido</p>
-        </form>
-      </div>
-      </div>{/* end main drawer */}
     </div>
   );
 }

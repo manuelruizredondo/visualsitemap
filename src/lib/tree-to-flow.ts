@@ -17,7 +17,11 @@ export interface PageNodeData {
   a11yScore?: number;
   isLanguage?: boolean;
   tags?: { id: string; name: string; color: string }[];
+  availableTags?: { id: string; name: string; color: string }[];
+  selectedTagIds?: string[];
   onNameChange?: (pageKey: string, name: string) => void;
+  onDelete?: (nodeId: string) => void;
+  onToggleTag?: (pageKey: string, tagId: string, selected: boolean) => void;
   [key: string]: unknown;
 }
 
@@ -52,7 +56,7 @@ export function treeToFlow(tree: TreeNode): {
         source: parentId,
         target: node.id,
         type: node.depth >= 3 ? "smoothstep" : "bezier",
-        style: { stroke: "#94a3b8", strokeWidth: 2 },
+        style: { stroke: "#c4c7c8", strokeWidth: 2 },
       });
     }
 
@@ -91,7 +95,7 @@ export function customNodesToFlow(customNodes: CustomNode[]): {
       source: cn.parentNodeId,
       target: cn.id,
       type: "bezier",
-      style: { stroke: "#94a3b8", strokeWidth: 2 },
+      style: { stroke: "#c4c7c8", strokeWidth: 2 },
     }));
 
   return { nodes, edges };

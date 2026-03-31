@@ -58,7 +58,7 @@ export default function SitemapUploader() {
       <div className="space-y-4">
         {/* File upload */}
         <div
-          className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-all"
+          className="border-2 border-dashed border-[#c4c7c8] rounded-[20px] p-8 text-center cursor-pointer hover:border-[#E2F162] hover:bg-white transition-all"
           onClick={() => fileInputRef.current?.click()}
         >
           <input
@@ -69,7 +69,7 @@ export default function SitemapUploader() {
             className="hidden"
           />
           <svg
-            className="w-12 h-12 mx-auto text-gray-400 mb-3"
+            className="w-12 h-12 mx-auto text-[#6b7072] mb-3"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -81,19 +81,19 @@ export default function SitemapUploader() {
               d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
             />
           </svg>
-          <p className="text-gray-600 font-medium">
+          <p className="text-[#1a1c1e] font-medium">
             Arrastra o haz clic para subir un archivo sitemap.xml
           </p>
-          <p className="text-sm text-gray-400 mt-1">
+          <p className="text-sm text-[#6b7072] mt-1">
             Formato XML
           </p>
         </div>
 
         {/* Divider */}
         <div className="flex items-center gap-4">
-          <div className="flex-1 h-px bg-gray-200" />
-          <span className="text-sm text-gray-400">o pega el XML</span>
-          <div className="flex-1 h-px bg-gray-200" />
+          <div className="flex-1 h-px bg-[#c4c7c8]" />
+          <span className="text-sm text-[#6b7072]">o pega el XML</span>
+          <div className="flex-1 h-px bg-[#c4c7c8]" />
         </div>
 
         {/* Textarea */}
@@ -104,12 +104,18 @@ export default function SitemapUploader() {
             setError("");
           }}
           placeholder={'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url>\n    <loc>https://ejemplo.com/</loc>\n  </url>\n  ...\n</urlset>'}
-          className="w-full h-48 p-4 border border-gray-200 rounded-xl font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+          className="w-full h-48 p-4 bg-[#eff1f2] rounded-2xl font-mono text-sm resize-none focus:outline-none transition-all"
+          onFocus={(e) => {
+            e.currentTarget.style.boxShadow = "inset 0 0 0 2px rgba(226, 241, 98, 0.3)";
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.boxShadow = "inset 0 0 0 1px transparent";
+          }}
         />
 
         {/* Error */}
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600">
+          <div className="bg-[#ffdad6] rounded-2xl p-3 text-sm text-red-600">
             {error}
           </div>
         )}
@@ -118,7 +124,7 @@ export default function SitemapUploader() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-3 px-6 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-lg"
+          className="w-full py-3 px-6 bg-[#E2F162] text-[#535c00] font-semibold rounded-full hover:bg-[#E2F162]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-lg"
         >
           {loading ? (
             <span className="flex items-center justify-center gap-2">

@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import type { Project, Annotation, AnnotationType, PageMeta, CustomNode } from "@/types";
+import type { Project, Annotation, AnnotationType, PageMeta, CustomNode, TreeNode } from "@/types";
 import { v4 as uuidv4 } from "uuid";
 
 const DATA_DIR = path.join(process.cwd(), "data", "projects");
@@ -138,6 +138,43 @@ export async function deleteAnnotation(projectId: string, url: string, annotatio
   if (project.annotations[url]) {
     project.annotations[url] = project.annotations[url].filter((a) => a.id !== annotationId);
   }
+  project.updatedAt = new Date().toISOString();
+  await saveProject(project);
+}
+
+export async function removeNode(projectId: string, nodeId: string): Promise<void> {
+  const project = await getProject(projectId);
+  if (!project) throw new Error("Proyecto no encontrado");
+
+  // Check if it's a custom node
+  const customIdx = project.customNodes.findIndex((n) => n.id === nodeId);
+  if (customIdx >= 0) {
+    project.customNodes.splice(customIdx, 1);
+  } else {
+    // It's a tree node — remove from the tree recursively
+    function removeFromTree(parent: TreeNode): boolean {
+      const idx = parent.children.findIndex((c) => c.id === nodeId);
+      if (idx >= 0) {
+        parent.children.splice(idx, 1);
+        return true;
+      }
+      for (const child of parent.children) {
+        if (removeFromTree(child)) return true;
+      }
+      return false;
+    }
+    removeFromTree(project.tree);
+  }
+
+  // Clean up associated data
+  // Find the page key (url for tree nodes)
+  const pageKey = nodeId;
+  if (project.pageMeta[pageKey]) delete project.pageMeta[pageKey];
+  if (project.annotations[pageKey]) delete project.annotations[pageKey];
+  if (project.pageTags?.[pageKey]) delete project.pageTags[pageKey];
+  if (project.pageNames?.[pageKey]) delete project.pageNames[pageKey];
+  if (project.pageDrawings?.[pageKey]) delete project.pageDrawings[pageKey];
+
   project.updatedAt = new Date().toISOString();
   await saveProject(project);
 }

@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 import { v4 as uuidv4 } from "uuid";
 
 import PageNodeComponent from "./PageNode";
+import CleanStepEdge from "./CleanStepEdge";
 import ProgressOverlay from "./ProgressOverlay";
 import NodeDrawer from "./NodeDrawer";
 import { treeToFlow, customNodesToFlow, type PageNodeData } from "@/lib/tree-to-flow";
@@ -35,6 +36,7 @@ declare global {
 }
 
 const nodeTypes = { pageNode: PageNodeComponent };
+const edgeTypes = { cleanStep: CleanStepEdge };
 
 /** Calculate accessibility score (0-10) from A11yData */
 function calculateA11yScore(a11y: A11yData): number {
@@ -103,6 +105,8 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
   const [newName, setNewName] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [filterTagId, setFilterTagId] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [edgeStyle, setEdgeStyle] = useState<"bezier" | "cleanStep">("bezier");
   const drawerCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { fitView, screenToFlowPosition } = useReactFlow();
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -118,6 +122,14 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
   // Ref for name change callback (used by PageNode via node data)
   const nameChangeRef = useRef<(pageKey: string, name: string) => void>(() => {});
   const stableNameChange = useCallback((pageKey: string, name: string) => nameChangeRef.current(pageKey, name), []);
+
+  // Ref for delete callback (used by PageNode via node data)
+  const deleteRef = useRef<(nodeId: string) => void>(() => {});
+  const stableDelete = useCallback((nodeId: string) => deleteRef.current(nodeId), []);
+
+  // Ref for toggle tag callback (used by PageNode context menu)
+  const toggleTagRef = useRef<(pageKey: string, tagId: string, selected: boolean) => void>(() => {});
+  const stableToggleTag = useCallback((pageKey: string, tagId: string, selected: boolean) => toggleTagRef.current(pageKey, tagId, selected), []);
 
   // Load project from API
   useEffect(() => {
@@ -170,21 +182,23 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
                 seoScore,
                 a11yScore,
                 tags,
-                onNameChange: stableNameChange,
+                availableTags: proj.tags ?? [],
+                selectedTagIds: proj.pageTags?.[n.data.url] ?? [],
+                onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag,
               },
             };
           }
           const customName = proj.pageNames?.[n.data.url];
-          return { ...n, data: { ...n.data, tags, title: customName || n.data.label, onNameChange: stableNameChange } };
+          return { ...n, data: { ...n.data, tags, title: customName || n.data.label, availableTags: proj.tags ?? [], selectedTagIds: proj.pageTags?.[n.data.url] ?? [], onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag } };
         });
 
         // Enrich custom nodes with pageMeta
         const enrichedCustomNodes = customNodes.map((n) => {
           const meta = proj.pageMeta?.[n.id];
           if (meta) {
-            return { ...n, data: { ...n.data, customImageUrl: meta.customImageUrl || undefined, onNameChange: stableNameChange } };
+            return { ...n, data: { ...n.data, customImageUrl: meta.customImageUrl || undefined, availableTags: proj.tags ?? [], selectedTagIds: proj.pageTags?.[n.id] ?? [], onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag } };
           }
-          return { ...n, data: { ...n.data, onNameChange: stableNameChange } };
+          return { ...n, data: { ...n.data, availableTags: proj.tags ?? [], selectedTagIds: proj.pageTags?.[n.id] ?? [], onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag } };
         });
 
         const { nodes: layouted, edges: layoutedEdges } = getLayoutedElements(
@@ -303,8 +317,9 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
   }
 
   const onLayout = useCallback(
-    (dir: "TB" | "LR") => {
+    (dir: "TB" | "LR", overrideEdgeStyle?: "bezier" | "cleanStep") => {
       setDirection(dir);
+      const eStyle = overrideEdgeStyle ?? edgeStyle;
       // Only layout non-custom nodes; keep custom nodes in their saved positions
       const treeNodes = nodes.filter((n) => !n.data.isCustom);
       const treeEdges = edges.filter((e) => {
@@ -320,10 +335,11 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
       });
       const { nodes: layouted, edges: layoutedEdges } = getLayoutedElements(treeNodes, treeEdges, dir);
       setNodes([...layouted, ...customNodes]);
-      setEdges([...layoutedEdges, ...customEdges]);
+      const allEdges = [...layoutedEdges, ...customEdges].map((e) => ({ ...e, type: eStyle }));
+      setEdges(allEdges);
       setTimeout(() => fitView({ padding: 0.2 }), 50);
     },
-    [nodes, edges, setNodes, setEdges, fitView]
+    [nodes, edges, edgeStyle, setNodes, setEdges, fitView]
   );
 
   // ── Drag parent → move descendants too ──────────────────────────────
@@ -571,7 +587,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
           depth: 1,
           isVirtual: false,
           isCustom: true,
-          onNameChange: stableNameChange,
+          onNameChange: stableNameChange, onDelete: stableDelete,
         },
       };
       const newEdge: Edge = {
@@ -666,6 +682,11 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
       if (!prev) return prev;
       return { ...prev, tags: [...(prev.tags ?? []), tag] };
     });
+    // Update all nodes with the new available tags list
+    const newAvailableTags = [...(project?.tags ?? []), tag];
+    setNodes((prev) =>
+      prev.map((n) => ({ ...n, data: { ...n.data, availableTags: newAvailableTags } }))
+    );
   }
 
   function handleNameChange(pageKey: string, name: string) {
@@ -694,8 +715,72 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
     setSelectedNode((prev) => prev && prev.nodeKey === pageKey ? { ...prev, label: name || prev.label } : prev);
   }
 
-  // Keep ref in sync
+  function handleDeleteNode(nodeId: string) {
+    // Find all descendant node IDs
+    const descIds = getDescendantIds(nodeId);
+    const allIdsToRemove = new Set([nodeId, ...descIds]);
+
+    // Remove nodes
+    setNodes((prev) => prev.filter((n) => !allIdsToRemove.has(n.id)));
+    // Remove edges connected to any removed node
+    setEdges((prev) => prev.filter((e) => !allIdsToRemove.has(e.source) && !allIdsToRemove.has(e.target)));
+
+    // Close drawer if showing the deleted node
+    if (selectedNode && allIdsToRemove.has(selectedNode.nodeKey)) {
+      closeDrawer();
+    }
+
+    // Also remove the node we're looking at by its url key (for tree nodes the key is url)
+    const nodeBeingDeleted = nodes.find((n) => n.id === nodeId);
+    const pageKey = nodeBeingDeleted?.data.isCustom ? nodeId : (nodeBeingDeleted?.data.url || nodeId);
+
+    // Persist to API
+    fetch(`/api/projects/${projectId}/nodes`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nodeId: pageKey }),
+    }).catch(() => {});
+
+    // Update project state
+    setProject((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        customNodes: prev.customNodes.filter((n) => !allIdsToRemove.has(n.id)),
+      };
+    });
+  }
+
+  function handleToggleTag(pageKey: string, tagId: string, selected: boolean) {
+    const currentIds = project?.pageTags?.[pageKey] ?? [];
+    const newIds = selected
+      ? [...currentIds, tagId]
+      : currentIds.filter((id) => id !== tagId);
+    handleTagsChange(pageKey, newIds);
+
+    // Persist to API
+    fetch(`/api/projects/${projectId}/page-tags`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pageKey, tagIds: newIds }),
+    }).catch(() => {});
+
+    // Update node data so context menu reflects the change
+    setNodes((prev) =>
+      prev.map((n) => {
+        const nKey = n.data.isCustom ? n.id : n.data.url;
+        if (nKey === pageKey) {
+          return { ...n, data: { ...n.data, selectedTagIds: newIds } };
+        }
+        return n;
+      })
+    );
+  }
+
+  // Keep refs in sync
   nameChangeRef.current = handleNameChange;
+  deleteRef.current = handleDeleteNode;
+  toggleTagRef.current = handleToggleTag;
 
   async function handleRecapture(pageKey: string, url: string) {
     try {
@@ -823,7 +908,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
     return (
       <div className="w-full h-screen flex items-center justify-center bg-gray-50">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-[#5a3bdd] border-t-transparent rounded-full animate-spin" />
           <p className="text-gray-500 text-sm">Cargando proyecto...</p>
         </div>
       </div>
@@ -835,7 +920,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
       <div className="w-full h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <p className="text-gray-500 mb-4">Proyecto no encontrado</p>
-          <button onClick={() => router.push("/")} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
+          <button onClick={() => router.push("/")} className="px-4 py-2 bg-[#E2F162] text-[#535c00] rounded-full hover:bg-[#d4e954] text-sm font-medium transition-all">
             Volver al inicio
           </button>
         </div>
@@ -845,177 +930,185 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
 
   return (
     <div className="w-full h-screen relative bg-gray-50">
-      {/* Toolbar */}
-      <div className="absolute top-4 left-4 z-10 flex gap-2 items-center">
-        <button
-          onClick={() => router.push("/")}
-          className="px-3 py-2 text-sm rounded-lg border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 transition-all flex items-center gap-1.5"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+      {/* Top bar */}
+      <div className="absolute z-10 flex items-center justify-between px-4 py-3" style={{ top: 20, left: 20, right: 20, background: "#fff", borderRadius: 60, boxShadow: "0 4px 24px rgba(26,28,30,0.06), 0 1px 4px rgba(26,28,30,0.04)" }}>
+        {/* Left: Logo + close + project name */}
+        <div className="flex items-center gap-3 min-w-0">
+          <button onClick={() => router.push("/")} className="flex items-center gap-2 flex-shrink-0" title="Volver a proyectos" style={{ background: "none", border: "none", cursor: "pointer" }}>
+            <svg className="w-6 h-6" style={{ color: "var(--ec-secondary)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+            </svg>
+          </button>
+          <svg className="w-4 h-4 flex-shrink-0" style={{ color: "var(--ec-on-surface-variant)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
-          Proyectos
-        </button>
-        <div className="w-px h-6 bg-gray-200" />
-        <button
-          onClick={() => onLayout("TB")}
-          className={`px-3 py-2 text-sm rounded-lg border transition-all ${direction === "TB" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
-        >
-          Vertical
-        </button>
-        <button
-          onClick={() => onLayout("LR")}
-          className={`px-3 py-2 text-sm rounded-lg border transition-all ${direction === "LR" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
-        >
-          Horizontal
-        </button>
-        <button
-          onClick={() => fitView({ padding: 0.2 })}
-          className="px-3 py-2 text-sm rounded-lg border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 transition-all"
-        >
-          Centrar
-        </button>
-        <button
-          onClick={() => onLayout(direction)}
-          className="px-3 py-2 text-sm rounded-lg border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 transition-all flex items-center gap-1.5"
-          title="Resetear posiciones de las cajas"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          Resetear
-        </button>
-        <div className="w-px h-6 bg-gray-200" />
-        <div className="flex items-center gap-1 bg-white rounded-lg border border-gray-200">
-          <input
-            type="text"
-            placeholder="Buscar página..."
-            value={searchTerm}
-            onChange={(e) => handleSearchChange(e.target.value)}
-            className="px-3 py-2 text-sm border-0 focus:outline-none bg-transparent"
-          />
-          {searchTerm && (
-            <button
-              onClick={handleClearSearch}
-              className="px-2 py-2 text-gray-400 hover:text-gray-600 transition-colors"
-              title="Limpiar búsqueda"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-          {searchTerm && (
-            <span className="px-2 py-2 text-xs text-gray-500 font-medium">
-              {countMatches()}/{nodes.length}
-            </span>
-          )}
+          <div className="flex items-center gap-2 min-w-0 group">
+            {editingName ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text" value={newName} onChange={(e) => setNewName(e.target.value)}
+                  onBlur={handleSaveName}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSaveName(); if (e.key === "Escape") setEditingName(false); }}
+                  disabled={savingName} autoFocus
+                  style={{ padding: "4px 12px", fontSize: 16, fontWeight: 600, color: "var(--ec-on-surface)", border: "none", borderRadius: 9999, background: "var(--ec-surface-container-low)", outline: "none", boxShadow: "0 0 0 2px rgba(90,59,221,0.25)" }}
+                />
+                {savingName && <div className="w-4 h-4 border-2 border-[#5a3bdd] border-t-transparent rounded-full animate-spin" />}
+              </div>
+            ) : (
+              <>
+                <span style={{ fontSize: 20, fontWeight: 600, color: "var(--ec-on-surface)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{project?.name}</span>
+                <button onClick={handleProjectNameClick}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ border: "none", background: "transparent", cursor: "pointer", color: "var(--ec-on-surface-variant)", flexShrink: 0 }}
+                  title="Editar nombre"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                </button>
+              </>
+            )}
+            <span style={{
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              minWidth: 34, height: 34, borderRadius: 10, padding: "0 8px",
+              background: "var(--ec-surface-container-low, #eff1f2)",
+              fontSize: 12, fontWeight: 600, color: "var(--ec-on-surface-variant, #6b7072)",
+              flexShrink: 0,
+            }}>{nodes.length}</span>
+          </div>
         </div>
 
-        {/* Tag filter */}
-        {(project?.tags ?? []).length > 0 && (
-          <div className="relative">
-            <select
-              value={filterTagId || ""}
-              onChange={(e) => {
-                const val = e.target.value || null;
-                setFilterTagId(val);
-                // Apply filter
-                setNodes((prev) =>
-                  prev.map((n) => {
-                    const nKey = n.data.isCustom ? n.id : n.data.url;
-                    const nTagIds = project?.pageTags?.[nKey] ?? [];
-                    const matches = !val || nTagIds.includes(val);
-                    return {
-                      ...n,
-                      style: {
-                        ...n.style,
-                        opacity: matches ? 1 : 0.3,
-                      },
-                    };
-                  })
-                );
-              }}
-              className="px-3 py-2 text-sm rounded-lg border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 outline-none cursor-pointer"
-            >
-              <option value="">Todas las etiquetas</option>
-              {(project?.tags ?? []).map((tag) => (
-                <option key={tag.id} value={tag.id}>{tag.name}</option>
-              ))}
-            </select>
-          </div>
-        )}
-        <button
-          onClick={handleRecaptureAll}
-          disabled={screenshotStatus?.status === "processing"}
-          className={`px-3 py-2 text-sm rounded-lg border transition-all flex items-center gap-1.5 ${
-            screenshotStatus?.status === "processing"
-              ? "bg-amber-50 text-amber-600 border-amber-300 cursor-not-allowed"
-              : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-          }`}
-          title="Recapturar todas las páginas"
-        >
-          {screenshotStatus?.status === "processing" ? (
-            <>
-              <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
-              {screenshotStatus.completed}/{screenshotStatus.total}
-            </>
-          ) : (
-            <>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Recapturar todo
-            </>
-          )}
-        </button>
-        <button
-          onClick={handleExport}
-          className="px-3 py-2 text-sm rounded-lg border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 transition-all flex items-center gap-1.5"
-          title="Exportar sitemap como PNG"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-          </svg>
-          Exportar
-        </button>
-      </div>
-
-      {/* Project info */}
-      <div className="absolute top-4 right-4 z-10 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 flex items-center gap-3 group">
-        {editingName ? (
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onBlur={handleSaveName}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSaveName();
-                if (e.key === "Escape") setEditingName(false);
-              }}
-              disabled={savingName}
-              autoFocus
-              className="px-2 py-1 border border-blue-300 rounded bg-white text-gray-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+        {/* Right: Search + Settings */}
+        <div className="flex items-center gap-2">
+          {/* Search */}
+          <div className="flex items-center gap-1.5 rounded-xl px-3 py-1.5" style={{ background: "var(--ec-surface-container-low)" }}>
+            <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "var(--ec-on-surface-variant)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" /><path strokeLinecap="round" strokeWidth={2} d="M21 21l-4.35-4.35" /></svg>
+            <input type="text" placeholder="Buscar..." value={searchTerm} onChange={(e) => handleSearchChange(e.target.value)}
+              style={{ width: 110, padding: 0, fontSize: 12, border: "none", outline: "none", background: "transparent", color: "var(--ec-on-surface)", fontFamily: "inherit" }}
             />
-            {savingName && <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />}
+            {searchTerm && (
+              <button onClick={handleClearSearch} style={{ border: "none", background: "transparent", cursor: "pointer", color: "var(--ec-on-surface-variant)", padding: 0, display: "flex" }}>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            )}
+            {searchTerm && <span style={{ fontSize: 11, color: "var(--ec-on-surface-variant)", fontWeight: 600 }}>{countMatches()}/{nodes.length}</span>}
           </div>
-        ) : (
-          <>
-            <span className="font-medium text-gray-800">{project?.name}</span>
-            <button
-              onClick={handleProjectNameClick}
-              className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-gray-600"
-              title="Editar nombre del proyecto"
+
+          {/* Settings button */}
+          <div style={{ position: "relative" }}>
+            <button onClick={() => setSettingsOpen(!settingsOpen)}
+              style={{ width: 36, height: 36, borderRadius: 12, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", background: settingsOpen ? "var(--ec-secondary)" : "var(--ec-surface-container-low)", color: settingsOpen ? "#fff" : "var(--ec-on-surface-variant)", transition: "all 0.15s" }}
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
               </svg>
             </button>
-          </>
-        )}
-        <span className="text-gray-400">·</span>
-        <span>{nodes.length} páginas</span>
+
+            {/* Settings dropdown */}
+            {settingsOpen && (
+              <>
+                {/* Backdrop */}
+                <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setSettingsOpen(false)} />
+                {/* Panel */}
+                <div style={{
+                  position: "absolute", top: "calc(100% + 8px)", right: 0, zIndex: 50,
+                  width: 260, background: "#fff", borderRadius: 16,
+                  boxShadow: "0 12px 40px rgba(26,28,30,0.14), 0 2px 8px rgba(26,28,30,0.06)",
+                  border: "1px solid var(--ec-surface-container-high)",
+                  padding: "8px 0", overflow: "hidden",
+                }}>
+                  {/* Layout */}
+                  <div style={{ padding: "10px 16px 6px" }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--ec-on-surface-variant)", marginBottom: 8 }}>Disposición</p>
+                    <div className="flex gap-2">
+                      <button onClick={() => { onLayout("TB"); }}
+                        style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, transition: "all 0.15s", background: direction === "TB" ? "var(--ec-secondary)" : "var(--ec-surface-container-low)", color: direction === "TB" ? "#fff" : "var(--ec-on-surface-variant)" }}
+                      >Vertical</button>
+                      <button onClick={() => { onLayout("LR"); }}
+                        style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, transition: "all 0.15s", background: direction === "LR" ? "var(--ec-secondary)" : "var(--ec-surface-container-low)", color: direction === "LR" ? "#fff" : "var(--ec-on-surface-variant)" }}
+                      >Horizontal</button>
+                    </div>
+                  </div>
+
+                  {/* Actions list */}
+                  <div style={{ padding: "4px 8px" }}>
+                    <button onClick={() => { fitView({ padding: 0.2 }); setSettingsOpen(false); }}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 10, border: "none", cursor: "pointer", background: "transparent", fontSize: 13, color: "var(--ec-on-surface)", textAlign: "left", transition: "background 0.1s" }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--ec-surface-container-low)"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                    >
+                      <svg className="w-4 h-4 flex-shrink-0" style={{ color: "var(--ec-on-surface-variant)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                      Centrar vista
+                    </button>
+
+                    <button onClick={() => { onLayout(direction); setSettingsOpen(false); }}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 10, border: "none", cursor: "pointer", background: "transparent", fontSize: 13, color: "var(--ec-on-surface)", textAlign: "left", transition: "background 0.1s" }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--ec-surface-container-low)"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                    >
+                      <svg className="w-4 h-4 flex-shrink-0" style={{ color: "var(--ec-on-surface-variant)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                      Resetear posiciones
+                    </button>
+
+                    <button onClick={() => { handleRecaptureAll(); setSettingsOpen(false); }}
+                      disabled={screenshotStatus?.status === "processing"}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 10, border: "none", cursor: "pointer", background: "transparent", fontSize: 13, color: "var(--ec-on-surface)", textAlign: "left", transition: "background 0.1s", opacity: screenshotStatus?.status === "processing" ? 0.5 : 1 }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--ec-surface-container-low)"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                    >
+                      <svg className="w-4 h-4 flex-shrink-0" style={{ color: "var(--ec-on-surface-variant)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><circle cx="12" cy="13" r="3" /></svg>
+                      {screenshotStatus?.status === "processing" ? `Capturando... ${screenshotStatus.completed}/${screenshotStatus.total}` : "Recapturar todo"}
+                    </button>
+
+                    <button onClick={() => { handleExport(); setSettingsOpen(false); }}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 10, border: "none", cursor: "pointer", background: "transparent", fontSize: 13, color: "var(--ec-on-surface)", textAlign: "left", transition: "background 0.1s" }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--ec-surface-container-low)"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                    >
+                      <svg className="w-4 h-4 flex-shrink-0" style={{ color: "var(--ec-on-surface-variant)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                      Exportar como PNG
+                    </button>
+                  </div>
+
+                  {/* Tag filter */}
+                  {(project?.tags ?? []).length > 0 && (
+                    <>
+                      <div style={{ height: 1, background: "var(--ec-surface-container-high)", margin: "8px 0" }} />
+                      <div style={{ padding: "6px 16px 10px" }}>
+                        <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--ec-on-surface-variant)", marginBottom: 8 }}>Filtrar por etiqueta</p>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          <button onClick={() => {
+                              setFilterTagId(null);
+                              setNodes((prev) => prev.map((n) => ({ ...n, style: { ...n.style, opacity: 1 } })));
+                            }}
+                            style={{ padding: "5px 10px", borderRadius: 9999, fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer", background: !filterTagId ? "var(--ec-secondary)" : "var(--ec-surface-container-low)", color: !filterTagId ? "#fff" : "var(--ec-on-surface-variant)", transition: "all 0.15s" }}
+                          >Todas</button>
+                          {(project?.tags ?? []).map((tag) => (
+                            <button key={tag.id} onClick={() => {
+                                const val = filterTagId === tag.id ? null : tag.id;
+                                setFilterTagId(val);
+                                setNodes((prev) =>
+                                  prev.map((n) => {
+                                    const nKey = n.data.isCustom ? n.id : n.data.url;
+                                    const nTagIds = project?.pageTags?.[nKey] ?? [];
+                                    const matches = !val || nTagIds.includes(val);
+                                    return { ...n, style: { ...n.style, opacity: matches ? 1 : 0.3 } };
+                                  })
+                                );
+                              }}
+                              style={{ padding: "5px 10px", borderRadius: 9999, fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, background: filterTagId === tag.id ? "var(--ec-secondary)" : "var(--ec-surface-container-low)", color: filterTagId === tag.id ? "#fff" : "var(--ec-on-surface-variant)", transition: "all 0.15s" }}
+                            >
+                              <span style={{ width: 8, height: 8, borderRadius: 4, background: tag.color, flexShrink: 0 }} />
+                              {tag.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       <ReactFlow
@@ -1024,6 +1117,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodeClick={onNodeClick}
         onConnectEnd={onConnectEnd}
         onNodeDragStart={onNodeDragStart}
@@ -1031,11 +1125,52 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
         fitView
         minZoom={0.05}
         maxZoom={2}
-        defaultEdgeOptions={{ type: "smoothstep" }}
+        defaultEdgeOptions={{ type: edgeStyle }}
       >
         <Background color="#e2e8f0" gap={20} />
-        <Controls position="bottom-right" />
-        <MiniMap nodeColor={() => "#93c5fd"} pannable zoomable position="top-right" style={{ marginTop: "3rem" }} />
+        <Controls
+          position="bottom-right"
+          orientation="vertical"
+          showInteractive={false}
+        >
+          <button
+            type="button"
+            className="react-flow__controls-button"
+            onClick={() => {
+              setEdgeStyle("bezier");
+              onLayout(direction, "bezier");
+            }}
+            style={
+              edgeStyle === "bezier"
+                ? { background: "var(--ec-secondary)", color: "#fff" }
+                : undefined
+            }
+            title="Líneas curvas (Bezier)"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden className="vs-controls-icon">
+              <path d="M4 20c0-8 4-16 16-16" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="react-flow__controls-button"
+            onClick={() => {
+              setEdgeStyle("cleanStep");
+              onLayout(direction, "cleanStep");
+            }}
+            style={
+              edgeStyle === "cleanStep"
+                ? { background: "var(--ec-secondary)", color: "#fff" }
+                : undefined
+            }
+            title="Líneas rectas (escalón)"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden className="vs-controls-icon">
+              <path d="M4 4v12h16" />
+            </svg>
+          </button>
+        </Controls>
+        <MiniMap nodeColor={() => "#93c5fd"} pannable zoomable position="top-right" style={{ marginTop: 100, marginRight: 20, borderRadius: 16, overflow: "hidden" }} />
       </ReactFlow>
 
       {screenshotStatus && (

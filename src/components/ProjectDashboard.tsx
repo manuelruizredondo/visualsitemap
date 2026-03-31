@@ -2,16 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import Sidebar from "./Sidebar";
 import ProjectCard from "./ProjectCard";
+import AppLayout, { VIEW_CONFIG, type ViewType } from "./AppLayout";
 import type { Project } from "@/types";
 
 interface ProjectDashboardProps {
   initialProjects: Omit<Project, "tree">[];
   userEmail?: string;
 }
-
-type ViewType = "recent" | "favorites" | "archived";
 
 export default function ProjectDashboard({ initialProjects, userEmail }: ProjectDashboardProps) {
   const [projects, setProjects] = useState(initialProjects);
@@ -40,69 +38,116 @@ export default function ProjectDashboard({ initialProjects, userEmail }: Project
   });
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar projects={projects} userEmail={userEmail} activeView={view} onViewChange={setView} />
+    <AppLayout projects={projects} userEmail={userEmail} activeView={view} onViewChange={setView}>
+      {/* Section title */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--ec-on-surface, #1a1c1e)" }}>
+            {VIEW_CONFIG[view].label}
+          </h1>
+          <span style={{
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            minWidth: 28, height: 28, borderRadius: 9,
+            padding: "0 6px", fontSize: 13, fontWeight: 600,
+            background: "var(--ec-surface-container-low, #eff1f2)",
+            color: "var(--ec-on-surface-variant, #6b7072)",
+          }}>
+            {filteredProjects.length}
+          </span>
+        </div>
+        <Link
+          href="/projects/new"
+          style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "8px 16px", borderRadius: 9999, textDecoration: "none",
+            fontSize: 13, fontWeight: 600,
+            background: "var(--ec-primary-container, #E2F162)",
+            color: "#535c00", transition: "all 0.15s",
+          }}
+        >
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Nuevo proyecto
+        </Link>
+      </div>
 
-      <main className="flex-1 bg-gray-50 overflow-y-auto">
-        <div className="p-8">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-8">
-            <h1 className="text-2xl font-bold text-gray-900">Mis proyectos</h1>
+      {filteredProjects.length === 0 ? (
+        <div style={{
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          paddingTop: 80, textAlign: "center",
+        }}>
+          <div style={{
+            width: 72, height: 72, borderRadius: 20,
+            background: "var(--ec-surface-container-low, #eff1f2)",
+            display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16,
+          }}>
+            <svg width="36" height="36" style={{ color: "var(--ec-on-surface-variant, #6b7072)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+            </svg>
+          </div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--ec-on-surface, #1a1c1e)", marginBottom: 4 }}>
+            {view === "favorites" ? "Sin favoritos" : view === "archived" ? "Sin archivados" : "Sin proyectos todavía"}
+          </h2>
+          <p style={{ fontSize: 14, color: "var(--ec-on-surface-variant, #6b7072)", marginBottom: 24 }}>
+            {view === "recent"
+              ? "Crea tu primer sitemap visual a partir de una URL o un sitemap.xml"
+              : view === "favorites"
+              ? "Marca proyectos como favoritos para acceder rápidamente"
+              : "Los proyectos archivados aparecerán aquí"}
+          </p>
+          {view === "recent" && (
             <Link
               href="/projects/new"
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
+              style={{
+                padding: "12px 24px", borderRadius: 9999, textDecoration: "none",
+                fontSize: 14, fontWeight: 600,
+                background: "var(--ec-primary-container, #E2F162)",
+                color: "#535c00", transition: "all 0.15s",
+              }}
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Nuevo proyecto
+              Crear primer proyecto
             </Link>
-          </div>
-
-          {/* Empty state */}
-          {filteredProjects.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-32 text-center">
-              <div className="w-20 h-20 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
-                <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                </svg>
-              </div>
-              <h2 className="text-lg font-semibold text-gray-700 mb-1">Sin proyectos todavía</h2>
-              <p className="text-gray-400 mb-6">
-                Crea tu primer sitemap visual a partir de una URL o un sitemap.xml
-              </p>
-              <Link
-                href="/projects/new"
-                className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium transition-colors"
-              >
-                Crear primer proyecto
-              </Link>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {filteredProjects.map((project) => (
-                <ProjectCard
-                  key={project.id}
-                  project={project}
-                  onDelete={handleDelete}
-                  onToggleFavorite={handleToggleFavorite}
-                  onToggleArchive={handleToggleArchive}
-                />
-              ))}
-              {/* New project card */}
-              <Link
-                href="/projects/new"
-                className="rounded-xl border-2 border-dashed border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50/50 transition-all flex flex-col items-center justify-center h-full min-h-[200px] gap-2 text-gray-400 hover:text-blue-500"
-              >
-                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
-                </svg>
-                <span className="text-sm font-medium">Nuevo proyecto</span>
-              </Link>
-            </div>
           )}
         </div>
-      </main>
-    </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
+          {filteredProjects.map((project) => (
+            <ProjectCard
+              key={project.id}
+              project={project}
+              onDelete={handleDelete}
+              onToggleFavorite={handleToggleFavorite}
+              onToggleArchive={handleToggleArchive}
+            />
+          ))}
+          {/* New project card */}
+          <Link
+            href="/projects/new"
+            style={{
+              borderRadius: 20, border: "2px dashed var(--ec-surface-container-high, #c4c7c8)",
+              background: "#fff", display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center",
+              minHeight: 200, gap: 8, textDecoration: "none",
+              color: "var(--ec-on-surface-variant, #6b7072)",
+              transition: "all 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.borderColor = "var(--ec-primary-container, #E2F162)";
+              (e.currentTarget as HTMLElement).style.color = "var(--ec-secondary, #5a3bdd)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.borderColor = "var(--ec-surface-container-high, #c4c7c8)";
+              (e.currentTarget as HTMLElement).style.color = "var(--ec-on-surface-variant, #6b7072)";
+            }}
+          >
+            <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
+            </svg>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Nuevo proyecto</span>
+          </Link>
+        </div>
+      )}
+    </AppLayout>
   );
 }
