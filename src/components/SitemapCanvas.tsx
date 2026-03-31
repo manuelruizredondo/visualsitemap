@@ -934,14 +934,24 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
       <div className="absolute z-10 flex items-center justify-between px-4 py-3" style={{ top: 20, left: 20, right: 20, background: "#fff", borderRadius: 60, boxShadow: "0 4px 24px rgba(26,28,30,0.06), 0 1px 4px rgba(26,28,30,0.04)" }}>
         {/* Left: Logo + close + project name */}
         <div className="flex items-center gap-3 min-w-0">
-          <button onClick={() => router.push("/")} className="flex items-center gap-2 flex-shrink-0" title="Volver a proyectos" style={{ background: "none", border: "none", cursor: "pointer" }}>
-            <svg className="w-6 h-6" style={{ color: "var(--ec-secondary)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+          <button
+            onClick={() => router.push("/")}
+            title="Volver a proyectos"
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+              background: "var(--ec-surface-container-low)",
+              border: "none", cursor: "pointer",
+              color: "var(--ec-on-surface-variant)",
+              transition: "background 0.15s",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--ec-surface-container)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "var(--ec-surface-container-low)"; }}
+          >
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+              <path d="M19 12H5M12 5l-7 7 7 7" />
             </svg>
           </button>
-          <svg className="w-4 h-4 flex-shrink-0" style={{ color: "var(--ec-on-surface-variant)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
           <div className="flex items-center gap-2 min-w-0 group">
             {editingName ? (
               <div className="flex items-center gap-2">

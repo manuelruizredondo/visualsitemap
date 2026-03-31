@@ -2,6 +2,8 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/Button";
+import { Textarea } from "@/components/ui/Input";
 
 export default function SitemapUploader() {
   const [xmlContent, setXmlContent] = useState("");
@@ -97,20 +99,12 @@ export default function SitemapUploader() {
         </div>
 
         {/* Textarea */}
-        <textarea
+        <Textarea
           value={xmlContent}
-          onChange={(e) => {
-            setXmlContent(e.target.value);
-            setError("");
-          }}
+          onChange={(e) => { setXmlContent(e.target.value); setError(""); }}
           placeholder={'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url>\n    <loc>https://ejemplo.com/</loc>\n  </url>\n  ...\n</urlset>'}
-          className="w-full h-48 p-4 bg-[#eff1f2] rounded-2xl font-mono text-sm resize-none focus:outline-none transition-all"
-          onFocus={(e) => {
-            e.currentTarget.style.boxShadow = "inset 0 0 0 2px rgba(226, 241, 98, 0.3)";
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.boxShadow = "inset 0 0 0 1px transparent";
-          }}
+          className="h-48"
+          mono
         />
 
         {/* Error */}
@@ -121,20 +115,9 @@ export default function SitemapUploader() {
         )}
 
         {/* Submit */}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full py-3 px-6 bg-[#E2F162] text-[#535c00] font-semibold rounded-full hover:bg-[#E2F162]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-lg"
-        >
-          {loading ? (
-            <span className="flex items-center justify-center gap-2">
-              <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              Analizando...
-            </span>
-          ) : (
-            "Analizar Sitemap"
-          )}
-        </button>
+        <Button type="submit" variant="primary" size="lg" fullWidth loading={loading} disabled={loading}>
+          {loading ? "Analizando..." : "Analizar Sitemap"}
+        </Button>
       </div>
     </form>
   );

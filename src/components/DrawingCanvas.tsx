@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useEffect, useCallback } from "react";
+import { Button } from "@/components/ui/Button";
 
 interface DrawingCanvasProps {
   imageUrl: string;
@@ -341,19 +342,21 @@ export default function DrawingCanvas({ imageUrl, savedDrawing, onSave }: Drawin
         {dirty && (
           <>
             <div style={{ flex: 1 }} />
-            <button onClick={handleSave} disabled={saving}
-              style={{
-                padding: "6px 12px", borderRadius: 10, fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer",
-                display: "flex", alignItems: "center", gap: 6, transition: "all 0.15s",
-                background: "var(--ec-primary-container)", color: "#535c00", opacity: saving ? 0.5 : 1,
-              }}
+            <Button
+              variant="primary"
+              shape="rounded"
+              size="sm"
+              onClick={handleSave}
+              disabled={saving}
+              loading={saving}
             >
-              {saving ? (
-                <><div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />Guardando...</>
-              ) : (
-                <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Guardar marcas</>
+              {saving ? "Guardando..." : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                  Guardar marcas
+                </>
               )}
-            </button>
+            </Button>
           </>
         )}
       </div>

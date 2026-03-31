@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import type { Annotation, AnnotationType, PageMeta, SeoData, A11yData, Tag } from "@/types";
 import TagSelector from "./TagSelector";
 import DrawingCanvas from "./DrawingCanvas";
+import { Button } from "@/components/ui/Button";
 
 interface NodeDrawerProps {
   projectId: string;
@@ -586,17 +587,15 @@ export default function NodeDrawer({
               style={{ width: "100%", padding: "10px 14px", fontSize: 13, borderRadius: 14, border: "none", resize: "none", background: "var(--ec-surface-container-lowest)", color: "var(--ec-on-surface)", outline: "none", fontFamily: "inherit" }}
               onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleAddAnnotation(e as unknown as React.FormEvent); }}
             />
-            <button type="submit" disabled={saving || !newText.trim()}
-              style={{
-                width: "100%", padding: "10px 0", borderRadius: 9999, border: "none",
-                fontSize: 13, fontWeight: 700, cursor: "pointer",
-                background: saving || !newText.trim() ? "var(--ec-surface-container-high)" : "var(--ec-primary-container)",
-                color: saving || !newText.trim() ? "var(--ec-on-surface-variant)" : "#535c00",
-                transition: "all 0.15s",
-              }}
+            <Button
+              type="submit"
+              variant="primary"
+              fullWidth
+              loading={saving}
+              disabled={saving || !newText.trim()}
             >
               {saving ? "Guardando..." : "Guardar anotación"}
-            </button>
+            </Button>
             <p style={{ fontSize: 11, color: "var(--ec-on-surface-variant)", textAlign: "center" }}>⌘+Enter para guardar rápido</p>
           </form>
         </div>

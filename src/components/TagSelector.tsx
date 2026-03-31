@@ -3,6 +3,8 @@
 import { useState } from "react";
 import type { Tag } from "@/types";
 import TagBadge from "./TagBadge";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 
 const PRESET_COLORS = [
   "#ef4444", "#f97316", "#eab308", "#22c55e",
@@ -161,12 +163,13 @@ export default function TagSelector({
             {/* Create new tag form */}
             {showCreate && (
               <form onSubmit={handleCreateTag} className="border-t border-gray-100 p-3 space-y-2">
-                <input
+                <Input
                   type="text"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="Nombre de etiqueta..."
-                  className="w-full text-sm px-2.5 py-1.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  shape="rounded"
+                  className="px-2.5 py-1.5 text-sm"
                   autoFocus
                 />
                 <div className="flex gap-1.5">
@@ -180,13 +183,17 @@ export default function TagSelector({
                     />
                   ))}
                 </div>
-                <button
+                <Button
                   type="submit"
+                  variant="primary"
+                  shape="rounded"
+                  size="sm"
+                  fullWidth
                   disabled={creating || !newName.trim()}
-                  className="w-full py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors"
+                  loading={creating}
                 >
                   {creating ? "Creando..." : "Crear etiqueta"}
-                </button>
+                </Button>
               </form>
             )}
           </div>

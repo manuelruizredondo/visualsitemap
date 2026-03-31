@@ -2,6 +2,8 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/Button";
+import { Input, Textarea } from "@/components/ui/Input";
 
 type SourceTab = "url" | "file" | "paste";
 
@@ -114,19 +116,11 @@ export default function CreateProjectForm() {
         <label className="block text-sm font-medium text-[#1a1c1e] mb-1">
           Nombre del proyecto <span className="text-red-500">*</span>
         </label>
-        <input
+        <Input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Mi sitio web"
-          className="w-full px-4 py-2.5 bg-[#eff1f2] rounded-full focus:outline-none transition-all"
-          style={{ boxShadow: "inset 0 0 0 1px transparent" }}
-          onFocus={(e) => {
-            e.currentTarget.style.boxShadow = "inset 0 0 0 2px rgba(226, 241, 98, 0.3)";
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.boxShadow = "inset 0 0 0 1px transparent";
-          }}
         />
       </div>
 
@@ -156,27 +150,22 @@ export default function CreateProjectForm() {
         {tab === "url" && (
           <div className="space-y-2">
             <div className="flex gap-2">
-              <input
+              <Input
                 type="url"
                 value={siteUrl}
                 onChange={(e) => { setSiteUrl(e.target.value); setVerifyStatus(null); }}
                 placeholder="https://ejemplo.com"
-                className="flex-1 px-4 py-2.5 bg-[#eff1f2] rounded-full focus:outline-none transition-all"
-                onFocus={(e) => {
-                  e.currentTarget.style.boxShadow = "inset 0 0 0 2px rgba(226, 241, 98, 0.3)";
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.boxShadow = "inset 0 0 0 1px transparent";
-                }}
+                className="flex-1"
               />
-              <button
+              <Button
                 type="button"
+                variant="secondary"
                 onClick={handleVerifyUrl}
                 disabled={verifying || !siteUrl.trim()}
-                className="px-4 py-2.5 bg-[#eff1f2] text-[#1a1c1e] rounded-full hover:bg-[#e0e3e4] disabled:opacity-50 text-sm font-medium whitespace-nowrap transition-colors"
+                className="whitespace-nowrap"
               >
                 {verifying ? "Buscando..." : "Verificar"}
-              </button>
+              </Button>
             </div>
             {verifyStatus && (
               <p
@@ -221,17 +210,12 @@ export default function CreateProjectForm() {
 
         {/* Paste tab */}
         {tab === "paste" && (
-          <textarea
+          <Textarea
             value={xmlContent}
             onChange={(e) => { setXmlContent(e.target.value); setError(""); }}
             placeholder={'<?xml version="1.0" encoding="UTF-8"?>\n<urlset ...>\n  <url><loc>https://...</loc></url>\n</urlset>'}
-            className="w-full h-48 p-4 bg-[#eff1f2] rounded-2xl font-mono text-sm resize-none focus:outline-none transition-all"
-            onFocus={(e) => {
-              e.currentTarget.style.boxShadow = "inset 0 0 0 2px rgba(226, 241, 98, 0.3)";
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.boxShadow = "inset 0 0 0 1px transparent";
-            }}
+            className="h-48"
+            mono
           />
         )}
       </div>
@@ -242,20 +226,9 @@ export default function CreateProjectForm() {
         </div>
       )}
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full py-3 px-6 bg-[#E2F162] text-[#535c00] font-semibold rounded-full hover:bg-[#E2F162]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-      >
-        {loading ? (
-          <span className="flex items-center justify-center gap-2">
-            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            Creando proyecto...
-          </span>
-        ) : (
-          "Crear proyecto"
-        )}
-      </button>
+      <Button type="submit" variant="primary" size="lg" fullWidth loading={loading} disabled={loading}>
+        {loading ? "Creando proyecto..." : "Crear proyecto"}
+      </Button>
     </form>
   );
 }

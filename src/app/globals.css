@@ -58,6 +58,17 @@ body {
   color: var(--ec-on-surface);
 }
 
+/* Login / registro — quitar borde nativo del SO (Safari/Chrome) */
+input.auth-ec-input {
+  border: none !important;
+  -webkit-appearance: none;
+  appearance: none;
+}
+input.auth-ec-input:focus,
+input.auth-ec-input:focus-visible {
+  outline: none !important;
+}
+
 /* ── No-Line Rule: override default borders ──────────────────────── */
 /* Ghost border utility */
 .ghost-border {
