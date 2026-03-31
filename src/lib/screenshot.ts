@@ -1,10 +1,38 @@
 import puppeteer, { type Browser, type Page } from "puppeteer";
 import path from "path";
 import fs from "fs/promises";
-import type { ScreenshotResult, ScreenshotJob } from "@/types";
+import type { ScreenshotResult, ScreenshotJob, A11yData } from "@/types";
+
+/** Launch Puppeteer with a clear error when Chrome is missing. */
+async function launchBrowser(): Promise<Browser> {
+  try {
+    return await puppeteer.launch({
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-web-security",
+      ],
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (
+      msg.includes("Could not find Chrome") ||
+      msg.includes("Could not find Chromium")
+    ) {
+      throw new Error(
+        "Chrome no está instalado para Puppeteer. Ejecuta: npx puppeteer browsers install chrome"
+      );
+    }
+    throw err;
+  }
+}
 
 // In-memory store for screenshot jobs (attached to globalThis to survive HMR in dev)
-const globalJobs = globalThis as unknown as { __screenshotJobs?: Map<string, ScreenshotJob> };
+const globalJobs = globalThis as unknown as {
+  __screenshotJobs?: Map<string, ScreenshotJob>;
+};
 if (!globalJobs.__screenshotJobs) {
   globalJobs.__screenshotJobs = new Map<string, ScreenshotJob>();
 }
@@ -41,185 +69,101 @@ function urlToSlug(url: string): string {
 }
 
 /**
- * Navigate to a URL with progressive fallback:
- * networkidle2 → load + wait → domcontentloaded + wait
- */
-async function navigatePage(page: Page, url: string): Promise<void> {
-  try {
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 20000 });
-    return;
-  } catch {
-    // networkidle2 timed out (common on pages with animations / websockets)
-  }
-
-  try {
-    await page.goto(url, { waitUntil: "load", timeout: 15000 });
-    await new Promise((r) => setTimeout(r, 2500));
-    return;
-  } catch {
-    // load also timed out
-  }
-
-  // Last resort
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 10000 });
-  await new Promise((r) => setTimeout(r, 4000));
-}
-
-/**
- * Scroll through the entire page using wheel events.
- * Locomotive Scroll, Lenis, GSAP ScrollTrigger, and IntersectionObserver-based
- * animations all respond to native wheel events, which this dispatches.
- */
-async function autoScrollPage(page: Page): Promise<void> {
-  await page.evaluate(async () => {
-    // Get an estimate of total scroll distance.
-    // For Locomotive Scroll the real height is in its scroll container.
-    // For Lenis the wrapper is [data-lenis-wrapper] or the Lenis instance
-    // attaches to <html> with class "lenis".
-    const locoContainer = document.querySelector("[data-scroll-container]");
-    const lenisWrapper =
-      document.querySelector("[data-lenis-wrapper]") ||
-      document.querySelector(".lenis-wrapper");
-    const lenisContent =
-      document.querySelector("[data-lenis-content]") ||
-      document.querySelector(".lenis-content");
-
-    const estimatedHeight = locoContainer
-      ? (locoContainer as HTMLElement).scrollHeight
-      : lenisContent
-        ? (lenisContent as HTMLElement).scrollHeight
-        : lenisWrapper
-          ? (lenisWrapper as HTMLElement).scrollHeight
-          : Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-
-    const steps = Math.ceil(estimatedHeight / 600) + 5; // ~600px per step
-    const delay = 250; // ms between steps — enough for Locomotive to update
-
-    for (let i = 0; i <= steps; i++) {
-      // Dispatch a wheel event — Locomotive intercepts these to drive its scroll
-      window.dispatchEvent(
-        new WheelEvent("wheel", {
-          deltaY: 600,
-          deltaMode: 0,
-          bubbles: true,
-          cancelable: true,
-        })
-      );
-      // Also move the native scroll position (for non-Locomotive pages)
-      window.scrollBy(0, 600);
-      await new Promise((r) => setTimeout(r, delay));
-    }
-
-    // Give animations time to settle at the bottom
-    await new Promise((r) => setTimeout(r, 800));
-  });
-
-  // Extra buffer outside evaluate for image decoding / CSS transitions
-  await new Promise((r) => setTimeout(r, 1000));
-}
-
-/**
- * Neutralise Locomotive Scroll, Lenis, and similar smooth-scroll libraries
- * so that Puppeteer can capture the full page height.
+ * Neutralise smooth-scroll libraries (Lenis, Locomotive Scroll) so Puppeteer
+ * can take a proper fullPage screenshot.
  *
- * Locomotive sets `overflow: hidden` on <html> and <body> via the class
- * `has-scroll-smooth`, and applies `transform: translate3d(0, -Ypx, 0)` to
- * the scroll-content wrapper.
+ * The key problem: these libraries set `overflow: hidden` on <html>/<body>
+ * and translate content via CSS transforms, which prevents Puppeteer's
+ * `fullPage: true` from seeing the real document height.
  *
- * Lenis sets `overflow: hidden` on <html> via the class `lenis` /
- * `lenis-smooth`, and uses `transform: translateY(-Ypx)` on
- * [data-lenis-content] or the first child of [data-lenis-wrapper].
- *
- * Removing the classes + resetting transforms is cleaner than fighting
- * specificity with !important.
+ * Strategy: destroy/disable the library, remove its classes, reset transforms,
+ * and restore native overflow — then let Puppeteer handle the rest.
  */
-async function prepareForScreenshot(page: Page): Promise<void> {
+async function neutraliseSmoothScroll(page: Page): Promise<void> {
   await page.evaluate(() => {
-    // ── 1. Remove Locomotive Scroll classes ──────────────────────────
-    const locoClasses = [
-      "has-scroll-smooth",
-      "has-scroll-init",
-      "has-scroll-scrolling",
-      "has-scroll-dragging",
-    ];
-    locoClasses.forEach((cls) => {
-      document.documentElement.classList.remove(cls);
-      document.body.classList.remove(cls);
-    });
-
-    // ── 2. Remove Lenis classes ─────────────────────────────────────
-    const lenisClasses = [
-      "lenis",
-      "lenis-smooth",
-      "lenis-scrolling",
-      "lenis-stopped",
-    ];
-    lenisClasses.forEach((cls) => {
-      document.documentElement.classList.remove(cls);
-      document.body.classList.remove(cls);
-    });
-
-    // ── 3. Try to destroy the Lenis instance so it stops fighting us ─
+    // ── Lenis ───────────────────────────────────────────────────────
+    // 1. Try to destroy the Lenis instance first (stops rAF loop)
     try {
-      // Lenis is often stored on window or as a global
       const win = window as unknown as Record<string, unknown>;
-      const lenisInstance =
-        win.lenis || win.Lenis || win.__lenis || win.lenisInstance;
-      if (lenisInstance && typeof (lenisInstance as any).destroy === "function") {
-        (lenisInstance as any).destroy();
+      const candidates = [
+        win.lenis,
+        win.__lenis,
+        win.lenisInstance,
+        win.scroll,
+        win.smoother,
+      ];
+      for (const inst of candidates) {
+        if (inst && typeof (inst as any).destroy === "function") {
+          (inst as any).destroy();
+        }
       }
     } catch {
-      // Lenis not found as a global — that's fine
+      // No global Lenis instance found — that's fine
     }
 
-    // ── 4. Reset Locomotive transforms ──────────────────────────────
-    const locoContent =
-      document.querySelector("[data-scroll-content]") ||
-      document.querySelector("[data-scroll-container] > *");
-    if (locoContent) {
-      (locoContent as HTMLElement).style.transform = "none";
-      (locoContent as HTMLElement).style.webkitTransform = "none";
-      (locoContent as HTMLElement).style.willChange = "auto";
-    }
+    // 2. Remove Lenis classes
+    ["lenis", "lenis-smooth", "lenis-scrolling", "lenis-stopped"].forEach(
+      (cls) => {
+        document.documentElement.classList.remove(cls);
+        document.body.classList.remove(cls);
+      }
+    );
 
-    // ── 5. Reset Lenis transforms ───────────────────────────────────
+    // 3. Reset Lenis wrapper/content transforms
     const lenisContent =
       document.querySelector("[data-lenis-content]") ||
       document.querySelector(".lenis-content") ||
       document.querySelector("[data-lenis-wrapper] > *");
     if (lenisContent) {
-      (lenisContent as HTMLElement).style.transform = "none";
-      (lenisContent as HTMLElement).style.webkitTransform = "none";
-      (lenisContent as HTMLElement).style.willChange = "auto";
+      const el = lenisContent as HTMLElement;
+      el.style.transform = "none";
+      el.style.webkitTransform = "none";
+      el.style.willChange = "auto";
     }
-
     const lenisWrapper =
       document.querySelector("[data-lenis-wrapper]") ||
       document.querySelector(".lenis-wrapper");
     if (lenisWrapper) {
-      (lenisWrapper as HTMLElement).style.overflow = "visible";
-      (lenisWrapper as HTMLElement).style.height = "auto";
-      (lenisWrapper as HTMLElement).style.maxHeight = "none";
+      const el = lenisWrapper as HTMLElement;
+      el.style.overflow = "visible";
+      el.style.height = "auto";
     }
 
-    // ── 6. Force overflow visible on key elements ───────────────────
-    const makeVisible = (el: Element | null) => {
-      if (!el) return;
-      const h = el as HTMLElement;
-      h.style.overflow = "visible";
-      h.style.height = "auto";
-      h.style.maxHeight = "none";
-    };
-    makeVisible(document.documentElement);
-    makeVisible(document.body);
-    makeVisible(document.querySelector("[data-scroll-container]"));
+    // ── Locomotive Scroll ───────────────────────────────────────────
+    [
+      "has-scroll-smooth",
+      "has-scroll-init",
+      "has-scroll-scrolling",
+      "has-scroll-dragging",
+    ].forEach((cls) => {
+      document.documentElement.classList.remove(cls);
+      document.body.classList.remove(cls);
+    });
 
-    // ── 7. Scroll native window back to top ─────────────────────────
+    const locoContent =
+      document.querySelector("[data-scroll-content]") ||
+      document.querySelector("[data-scroll-container] > *");
+    if (locoContent) {
+      const el = locoContent as HTMLElement;
+      el.style.transform = "none";
+      el.style.webkitTransform = "none";
+      el.style.willChange = "auto";
+    }
+    const locoContainer = document.querySelector("[data-scroll-container]");
+    if (locoContainer) {
+      (locoContainer as HTMLElement).style.overflow = "visible";
+    }
+
+    // ── Generic: ensure html & body allow full-height rendering ─────
+    document.documentElement.style.overflow = "visible";
+    document.body.style.overflow = "visible";
+
+    // Scroll back to top so fullPage captures from the beginning
     window.scrollTo(0, 0);
   });
 
-  // Wait for the browser to reflow after the CSS changes
-  await new Promise((r) => setTimeout(r, 600));
+  // Let the browser reflow
+  await new Promise((r) => setTimeout(r, 500));
 }
 
 /** Extract SEO data from the current page */
@@ -247,7 +191,10 @@ async function extractSeoData(page: Page) {
     links.forEach((link) => {
       try {
         const href = (link as HTMLAnchorElement).href;
-        if (href.startsWith(window.location.origin) || href.startsWith("/")) {
+        if (
+          href.startsWith(window.location.origin) ||
+          href.startsWith("/")
+        ) {
           internalLinks++;
         } else if (href.startsWith("http")) {
           externalLinks++;
@@ -256,7 +203,9 @@ async function extractSeoData(page: Page) {
     });
 
     const bodyText = document.body?.innerText || "";
-    const wordCount = bodyText.split(/\s+/).filter((w) => w.length > 0).length;
+    const wordCount = bodyText
+      .split(/\s+/)
+      .filter((w) => w.length > 0).length;
 
     return {
       h1: h1s,
@@ -276,7 +225,183 @@ async function extractSeoData(page: Page) {
   });
 }
 
-/** Capture a single page: navigate → scroll → neutralise Loco → screenshot */
+/** Extract accessibility data from the current page */
+async function extractA11yData(page: Page): Promise<A11yData> {
+  return page.evaluate(() => {
+    // ── Images without alt ──────────────────────────────────────────
+    const images = document.querySelectorAll("img");
+    const imgWithoutAlt = Array.from(images).filter(
+      (img) => !img.hasAttribute("alt") || (img.alt.trim() === "" && !img.getAttribute("role"))
+    ).length;
+
+    // ── Buttons without accessible label ────────────────────────────
+    const buttons = document.querySelectorAll("button, [role='button']");
+    const buttonsWithoutLabel = Array.from(buttons).filter((btn) => {
+      const text = (btn.textContent || "").trim();
+      const ariaLabel = btn.getAttribute("aria-label") || "";
+      const ariaLabelledBy = btn.getAttribute("aria-labelledby");
+      const title = btn.getAttribute("title") || "";
+      if (text || ariaLabel || title) return false;
+      if (ariaLabelledBy) {
+        const ref = document.getElementById(ariaLabelledBy);
+        if (ref && (ref.textContent || "").trim()) return false;
+      }
+      return true;
+    }).length;
+
+    // ── Inputs without label ────────────────────────────────────────
+    const inputs = document.querySelectorAll(
+      "input:not([type='hidden']):not([type='submit']):not([type='button']), select, textarea"
+    );
+    const inputsWithoutLabel = Array.from(inputs).filter((input) => {
+      const id = input.id;
+      if (id && document.querySelector(`label[for='${id}']`)) return false;
+      if (input.closest("label")) return false;
+      if (input.getAttribute("aria-label") || input.getAttribute("aria-labelledby")) return false;
+      if (input.getAttribute("title")) return false;
+      return true;
+    }).length;
+
+    // ── Links without discernible text ──────────────────────────────
+    const links = document.querySelectorAll("a[href]");
+    const linksWithoutText = Array.from(links).filter((a) => {
+      const text = (a.textContent || "").trim();
+      const ariaLabel = a.getAttribute("aria-label") || "";
+      const title = a.getAttribute("title") || "";
+      const img = a.querySelector("img[alt]");
+      return !text && !ariaLabel && !title && !img;
+    }).length;
+
+    // ── Missing lang attribute ──────────────────────────────────────
+    const missingLang = !document.documentElement.getAttribute("lang");
+
+    // ── Heading order validation ────────────────────────────────────
+    const headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6");
+    const headingSequence = Array.from(headings).map((h) =>
+      parseInt(h.tagName.charAt(1), 10)
+    );
+    let headingOrderValid = true;
+    for (let i = 1; i < headingSequence.length; i++) {
+      if (headingSequence[i] > headingSequence[i - 1] + 1) {
+        headingOrderValid = false;
+        break;
+      }
+    }
+
+    // ── Approximate low-contrast text detection ─────────────────────
+    // Checks visible text elements for contrast against their background
+    let lowContrastTexts = 0;
+    const textEls = document.querySelectorAll(
+      "p, span, a, li, td, th, label, h1, h2, h3, h4, h5, h6, button"
+    );
+    const sample = Array.from(textEls).slice(0, 200); // limit for performance
+    for (const el of sample) {
+      const style = getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden") continue;
+      const fgRaw = style.color;
+      const bgRaw = style.backgroundColor;
+      // Quick luminance check on rgb values
+      const parseRgb = (s: string) => {
+        const m = s.match(/(\d+)/g);
+        return m ? m.map(Number) : null;
+      };
+      const fg = parseRgb(fgRaw);
+      const bg = parseRgb(bgRaw);
+      if (fg && bg && bg[3] !== 0) {
+        // Relative luminance (simplified sRGB)
+        const lum = (rgb: number[]) => {
+          const [r, g, b] = rgb.map((c) => {
+            const s = c / 255;
+            return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+          });
+          return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        };
+        const l1 = lum(fg);
+        const l2 = lum(bg);
+        const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+        const fontSize = parseFloat(style.fontSize);
+        const isBold = parseInt(style.fontWeight, 10) >= 700;
+        const isLargeText = fontSize >= 24 || (fontSize >= 18.66 && isBold);
+        const minRatio = isLargeText ? 3 : 4.5;
+        if (ratio < minRatio) lowContrastTexts++;
+      }
+    }
+
+    // ── Skip link ───────────────────────────────────────────────────
+    const firstLinks = Array.from(document.querySelectorAll("a[href]")).slice(0, 5);
+    const missingSkipLink = !firstLinks.some((a) => {
+      const href = a.getAttribute("href") || "";
+      const text = ((a.textContent || "") + (a.getAttribute("aria-label") || "")).toLowerCase();
+      return href.startsWith("#") && (text.includes("skip") || text.includes("saltar") || text.includes("ir al contenido"));
+    });
+
+    // ── Landmarks ───────────────────────────────────────────────────
+    const missingMainLandmark =
+      !document.querySelector("main") && !document.querySelector("[role='main']");
+    const missingNavLandmark =
+      !document.querySelector("nav") && !document.querySelector("[role='navigation']");
+
+    // ── Autoplaying media ───────────────────────────────────────────
+    const autoplaying = document.querySelectorAll(
+      "video[autoplay], audio[autoplay]"
+    ).length;
+
+    // ── Form autocomplete ───────────────────────────────────────────
+    const formFields = document.querySelectorAll(
+      "input[type='text'], input[type='email'], input[type='tel'], input[type='password'], input[type='url'], input[type='search'], input:not([type])"
+    );
+    const formFieldsWithoutAutocomplete = Array.from(formFields).filter(
+      (f) => !f.getAttribute("autocomplete")
+    ).length;
+
+    return {
+      imgWithoutAlt,
+      totalImages: images.length,
+      buttonsWithoutLabel,
+      totalButtons: buttons.length,
+      inputsWithoutLabel,
+      totalInputs: inputs.length,
+      linksWithoutText,
+      totalLinks: links.length,
+      missingLang,
+      headingOrderValid,
+      headingSequence,
+      lowContrastTexts,
+      missingSkipLink,
+      missingMainLandmark,
+      missingNavLandmark,
+      autoplaying,
+      totalFormFields: formFields.length,
+      formFieldsWithoutAutocomplete,
+    };
+  });
+}
+
+/**
+ * Append `capture=1` to a URL so the target site renders in "capture mode"
+ * (all content visible, no scroll-dependent animations).
+ */
+function toCaptureUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    u.searchParams.set("capture", "1");
+    return u.toString();
+  } catch {
+    // If URL parsing fails, fall back to simple concatenation
+    return url + (url.includes("?") ? "&" : "?") + "capture=1";
+  }
+}
+
+/**
+ * Capture a single page.
+ *
+ * Flow: navigate with ?capture=1 → neutralise smooth-scroll (fallback)
+ *       → extract SEO → fullPage screenshot.
+ *
+ * The `capture=1` param tells the target site to render everything visible
+ * without depending on scroll or viewport. The neutralise step is kept as
+ * a safety net for sites that don't support this param.
+ */
 async function capturePage(
   page: Page,
   url: string,
@@ -291,16 +416,17 @@ async function capturePage(
   };
 
   try {
-    // Use a wide viewport so CSS breakpoints don't hide content
-    await page.setViewport({ width: 1440, height: 900 });
+    await page.setViewport({ width: 1280, height: 800 });
 
-    // Navigate with progressive fallback
-    await navigatePage(page, url);
+    // Navigate with capture mode enabled
+    const captureUrl = toCaptureUrl(url);
+    await page.goto(captureUrl, { waitUntil: "networkidle2", timeout: 30000 });
 
-    // Scroll through the page to trigger lazy-loaded content
-    await autoScrollPage(page);
+    // Safety net: neutralise smooth-scroll libs in case the site
+    // doesn't fully support ?capture=1
+    await neutraliseSmoothScroll(page);
 
-    // Extract SEO data while everything is still loaded
+    // Extract metadata & SEO
     const title = await page.title();
     const description = await page.evaluate(() => {
       const el =
@@ -309,37 +435,9 @@ async function capturePage(
       return el?.getAttribute("content") || "";
     });
     const seoData = await extractSeoData(page);
+    const a11yData = await extractA11yData(page);
 
-    // Neutralise Locomotive Scroll / smooth-scroll libs
-    await prepareForScreenshot(page);
-
-    // Measure the real content height after reflow
-    const fullHeight = await page.evaluate(() => {
-      const locoContent =
-        document.querySelector("[data-scroll-content]") ||
-        document.querySelector("[data-scroll-container] > *");
-      const lenisContent =
-        document.querySelector("[data-lenis-content]") ||
-        document.querySelector(".lenis-content") ||
-        document.querySelector("[data-lenis-wrapper] > *");
-
-      return Math.max(
-        document.body.scrollHeight,
-        document.body.offsetHeight,
-        document.documentElement.scrollHeight,
-        (locoContent as HTMLElement)?.scrollHeight ?? 0,
-        (locoContent as HTMLElement)?.offsetHeight ?? 0,
-        (lenisContent as HTMLElement)?.scrollHeight ?? 0,
-        (lenisContent as HTMLElement)?.offsetHeight ?? 0,
-        900 // minimum fallback
-      );
-    });
-
-    // Resize viewport to exact content height (Puppeteer cap: ~16384px)
-    const captureHeight = Math.min(Math.max(fullHeight, 900), 16000);
-    await page.setViewport({ width: 1440, height: captureHeight });
-    await new Promise((r) => setTimeout(r, 300));
-
+    // Take the screenshot — fullPage handles height automatically
     const slug = urlToSlug(url);
     const filename = `${slug}.jpg`;
     const filepath = path.join(screenshotDir, filename);
@@ -347,7 +445,7 @@ async function capturePage(
     await page.screenshot({
       path: filepath,
       type: "jpeg",
-      quality: 80,
+      quality: 75,
       fullPage: true,
     });
 
@@ -359,6 +457,7 @@ async function capturePage(
       descriptionLength: description.length,
       ...seoData,
     };
+    result.a11y = a11yData;
   } catch (err) {
     result.error = err instanceof Error ? err.message : "Error desconocido";
     result.title = url;
@@ -383,15 +482,7 @@ export async function processSingleScreenshot(
   let browser: Browser | null = null;
 
   try {
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-web-security",
-      ],
-    });
+    browser = await launchBrowser();
 
     const page = await browser.newPage();
     const result = await capturePage(page, url, screenshotDir, jobDir);
@@ -428,15 +519,7 @@ export async function processScreenshots(
   let browser: Browser | null = null;
 
   try {
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-web-security",
-      ],
-    });
+    browser = await launchBrowser();
 
     for (const url of urls) {
       try {

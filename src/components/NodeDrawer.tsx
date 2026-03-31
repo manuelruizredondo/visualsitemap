@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { Annotation, AnnotationType, PageMeta, SeoData, Tag } from "@/types";
+import type { Annotation, AnnotationType, PageMeta, SeoData, A11yData, Tag } from "@/types";
 import TagSelector from "./TagSelector";
 import DrawingCanvas from "./DrawingCanvas";
 
@@ -88,6 +88,21 @@ function calculateSeoScore(seo: SeoData): number {
   return score;
 }
 
+function calculateA11yScore(a11y: A11yData): number {
+  let score = 10;
+  if (a11y.totalImages > 0 && a11y.imgWithoutAlt > 0) score--;
+  if (a11y.buttonsWithoutLabel > 0) score--;
+  if (a11y.inputsWithoutLabel > 0) score--;
+  if (a11y.linksWithoutText > 0) score--;
+  if (a11y.missingLang) score--;
+  if (!a11y.headingOrderValid) score--;
+  if (a11y.lowContrastTexts >= 3) score--;
+  if (a11y.missingSkipLink) score--;
+  if (a11y.missingMainLandmark) score--;
+  if (a11y.autoplaying > 0) score--;
+  return Math.max(0, score);
+}
+
 export default function NodeDrawer({
   projectId,
   nodeKey,
@@ -121,7 +136,7 @@ export default function NodeDrawer({
   const [uploadingImage, setUploadingImage] = useState(false);
   const [localCustomImage, setLocalCustomImage] = useState<string | undefined>(customImageUrl);
   const [imageExpanded, setImageExpanded] = useState(false);
-  const [activeTab, setActiveTab] = useState<"info" | "seo">("info");
+  const [activeTab, setActiveTab] = useState<"info" | "seo" | "a11y">("info");
   const [filterType, setFilterType] = useState<AnnotationType | "all">("all");
   const [editingTitle, setEditingTitle] = useState(false);
   const [editTitleValue, setEditTitleValue] = useState("");
@@ -154,6 +169,8 @@ export default function NodeDrawer({
   const displayImage = localCustomImage || screenshotUrl;
   const seo = pageMeta?.seo;
   const seoScore = seo ? calculateSeoScore(seo) : null;
+  const a11y = pageMeta?.a11y;
+  const a11yScore = a11y ? calculateA11yScore(a11y) : null;
 
   async function handleAddAnnotation(e: React.FormEvent) {
     e.preventDefault();
@@ -337,11 +354,21 @@ export default function NodeDrawer({
         >
           SEO
         </button>
+        <button
+          onClick={() => setActiveTab("a11y")}
+          className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "a11y"
+              ? "border-blue-500 text-blue-600"
+              : "border-transparent text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          A11y
+        </button>
       </div>
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
-        {activeTab === "info" ? (
+        {activeTab === "info" && (
           <>
             {/* Screenshot / Custom image */}
             <div className="bg-gray-50 border-b border-gray-100 relative group">
@@ -565,7 +592,8 @@ export default function NodeDrawer({
               )}
             </div>
           </>
-        ) : (
+        )}
+        {activeTab === "seo" && (
           <>
             {seo ? (
               <div className="px-5 py-4 space-y-5">
@@ -738,6 +766,189 @@ export default function NodeDrawer({
               <div className="px-5 py-12 text-center">
                 <p className="text-sm text-gray-400">Sin datos SEO disponibles</p>
                 <p className="text-xs text-gray-300 mt-2">Ejecuta un análisis de captura de pantallas para obtener datos SEO</p>
+              </div>
+            )}
+          </>
+        )}
+        {activeTab === "a11y" && (
+          <>
+            {a11y ? (
+              <div className="px-5 py-4 space-y-5">
+                {/* A11y Score */}
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-16 h-16 rounded-full flex items-center justify-center font-bold text-lg ${
+                      a11yScore! >= 8
+                        ? "bg-green-100 text-green-700"
+                        : a11yScore! >= 5
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-red-100 text-red-700"
+                    }`}
+                  >
+                    {a11yScore}/10
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-gray-700">Accesibilidad</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {a11yScore! >= 8 ? "Buen nivel" : a11yScore! >= 5 ? "Mejorable" : "Requiere atención"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Lang attribute */}
+                <div className="border border-gray-200 rounded-lg p-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Idioma</h4>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-600">Atributo lang en &lt;html&gt;</span>
+                    <span className={!a11y.missingLang ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
+                      {!a11y.missingLang ? "✓" : "✗ Falta"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Landmarks */}
+                <div className="border border-gray-200 rounded-lg p-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Landmarks</h4>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">&lt;main&gt;</span>
+                      <span className={!a11y.missingMainLandmark ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
+                        {!a11y.missingMainLandmark ? "✓" : "✗ Falta"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">&lt;nav&gt;</span>
+                      <span className={!a11y.missingNavLandmark ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
+                        {!a11y.missingNavLandmark ? "✓" : "✗ Falta"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Skip link</span>
+                      <span className={!a11y.missingSkipLink ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
+                        {!a11y.missingSkipLink ? "✓" : "✗ Falta"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Heading hierarchy */}
+                <div className="border border-gray-200 rounded-lg p-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Jerarquía de Encabezados</h4>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Orden correcto</span>
+                      <span className={a11y.headingOrderValid ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
+                        {a11y.headingOrderValid ? "✓" : "✗ Saltos en la jerarquía"}
+                      </span>
+                    </div>
+                    {a11y.headingSequence.length > 0 && (
+                      <div className="text-gray-500 bg-gray-50 p-2 rounded flex flex-wrap gap-1">
+                        {a11y.headingSequence.map((level, i) => (
+                          <span
+                            key={i}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                              i > 0 && level > a11y.headingSequence[i - 1] + 1
+                                ? "bg-red-100 text-red-700"
+                                : "bg-gray-200 text-gray-600"
+                            }`}
+                          >
+                            H{level}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Images */}
+                <div className="border border-gray-200 rounded-lg p-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Imágenes</h4>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Total</span>
+                      <span className="text-gray-700 font-medium">{a11y.totalImages}</span>
+                    </div>
+                    {a11y.totalImages > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">Sin atributo alt</span>
+                        <span className={a11y.imgWithoutAlt === 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
+                          {a11y.imgWithoutAlt === 0 ? "✓ Ninguna" : `✗ ${a11y.imgWithoutAlt}`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Interactive elements */}
+                <div className="border border-gray-200 rounded-lg p-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Elementos Interactivos</h4>
+                  <div className="space-y-1.5 text-xs">
+                    {a11y.totalButtons > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">Botones sin label</span>
+                        <span className={a11y.buttonsWithoutLabel === 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
+                          {a11y.buttonsWithoutLabel === 0 ? "✓" : `✗ ${a11y.buttonsWithoutLabel}/${a11y.totalButtons}`}
+                        </span>
+                      </div>
+                    )}
+                    {a11y.totalInputs > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">Inputs sin label</span>
+                        <span className={a11y.inputsWithoutLabel === 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
+                          {a11y.inputsWithoutLabel === 0 ? "✓" : `✗ ${a11y.inputsWithoutLabel}/${a11y.totalInputs}`}
+                        </span>
+                      </div>
+                    )}
+                    {a11y.totalLinks > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">Enlaces sin texto</span>
+                        <span className={a11y.linksWithoutText === 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
+                          {a11y.linksWithoutText === 0 ? "✓" : `✗ ${a11y.linksWithoutText}/${a11y.totalLinks}`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Contrast */}
+                <div className="border border-gray-200 rounded-lg p-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Contraste</h4>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-600">Textos con bajo contraste</span>
+                    <span className={a11y.lowContrastTexts === 0 ? "text-green-600 font-medium" : a11y.lowContrastTexts < 3 ? "text-amber-600 font-medium" : "text-red-600 font-medium"}>
+                      {a11y.lowContrastTexts === 0 ? "✓ Ninguno" : `~${a11y.lowContrastTexts}`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Media */}
+                {a11y.autoplaying > 0 && (
+                  <div className="border border-red-200 rounded-lg p-3 bg-red-50">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-red-700 mb-2">Media</h4>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-red-600">Autoplay detectado</span>
+                      <span className="text-red-600 font-medium">✗ {a11y.autoplaying}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Formularios */}
+                {a11y.totalFormFields > 0 && (
+                  <div className="border border-gray-200 rounded-lg p-3">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">Formularios</h4>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-600">Campos sin autocomplete</span>
+                      <span className={a11y.formFieldsWithoutAutocomplete === 0 ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+                        {a11y.formFieldsWithoutAutocomplete === 0 ? "✓" : `${a11y.formFieldsWithoutAutocomplete}/${a11y.totalFormFields}`}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="px-5 py-12 text-center">
+                <p className="text-sm text-gray-400">Sin datos de accesibilidad</p>
+                <p className="text-xs text-gray-300 mt-2">Ejecuta un análisis de captura de pantallas para obtener datos de accesibilidad</p>
               </div>
             )}
           </>

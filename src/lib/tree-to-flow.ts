@@ -14,6 +14,8 @@ export interface PageNodeData {
   isCustom?: boolean;
   hasError?: boolean;
   seoScore?: number;
+  a11yScore?: number;
+  isLanguage?: boolean;
   tags?: { id: string; name: string; color: string }[];
   onNameChange?: (pageKey: string, name: string) => void;
   [key: string]: unknown;
@@ -30,14 +32,15 @@ export function treeToFlow(tree: TreeNode): {
     nodes.push({
       id: node.id,
       type: "pageNode",
-      position: { x: 0, y: 0 }, // dagre will set real positions
+      position: { x: 0, y: 0 }, // getLayoutedElements asigna posiciones
       data: {
         nodeId: node.id,
         label: node.label,
         url: node.url,
         fullPath: node.fullPath,
         depth: node.depth,
-        isVirtual: !node.url,
+        isVirtual: !node.url && !node.isLanguage,
+        isLanguage: node.isLanguage,
       },
     });
 

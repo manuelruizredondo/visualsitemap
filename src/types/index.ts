@@ -5,6 +5,7 @@ export interface TreeNode {
   fullPath: string;
   children: TreeNode[];
   depth: number;
+  isLanguage?: boolean;
 }
 
 export interface ParsedSitemap {
@@ -31,6 +32,27 @@ export interface SeoData {
   wordCount: number;
 }
 
+export interface A11yData {
+  imgWithoutAlt: number;
+  totalImages: number;
+  buttonsWithoutLabel: number;
+  totalButtons: number;
+  inputsWithoutLabel: number;
+  totalInputs: number;
+  linksWithoutText: number;
+  totalLinks: number;
+  missingLang: boolean;
+  headingOrderValid: boolean;
+  headingSequence: number[];       // e.g. [1,2,2,3,4,2] — actual heading levels in order
+  lowContrastTexts: number;        // approximate count of elements with poor contrast
+  missingSkipLink: boolean;
+  missingMainLandmark: boolean;
+  missingNavLandmark: boolean;
+  autoplaying: number;             // <video autoplay> or <audio autoplay> count
+  totalFormFields: number;
+  formFieldsWithoutAutocomplete: number;
+}
+
 export interface ScreenshotResult {
   url: string;
   screenshotPath: string;
@@ -38,6 +60,7 @@ export interface ScreenshotResult {
   description: string;
   error?: string;
   seo?: SeoData;
+  a11y?: A11yData;
 }
 
 export interface ScreenshotJob {
@@ -63,6 +86,7 @@ export interface PageMeta {
   screenshotPath: string;
   customImageUrl?: string;
   seo?: SeoData;
+  a11y?: A11yData;
 }
 
 /** A manually created node (not from sitemap XML) */

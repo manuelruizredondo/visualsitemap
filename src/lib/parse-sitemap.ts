@@ -27,6 +27,38 @@ export function parseSitemapXml(xml: string): string[] {
   return [];
 }
 
+// Common ISO 639-1 language codes used as URL prefixes
+const LANG_CODES = new Set([
+  "aa","ab","af","ak","am","an","ar","as","av","ay","az",
+  "ba","be","bg","bh","bi","bm","bn","bo","br","bs",
+  "ca","ce","ch","co","cr","cs","cu","cv","cy",
+  "da","de","dv","dz",
+  "ee","el","en","eo","es","et","eu",
+  "fa","ff","fi","fj","fo","fr","fy",
+  "ga","gd","gl","gn","gu","gv",
+  "ha","he","hi","ho","hr","ht","hu","hy","hz",
+  "ia","id","ie","ig","ii","ik","io","is","it","iu",
+  "ja","jv",
+  "ka","kg","ki","kj","kk","kl","km","kn","ko","kr","ks","ku","kv","kw","ky",
+  "la","lb","lg","li","ln","lo","lt","lu","lv",
+  "mg","mh","mi","mk","ml","mn","mr","ms","mt","my",
+  "na","nb","nd","ne","ng","nl","nn","no","nr","nv","ny",
+  "oc","oj","om","or","os",
+  "pa","pi","pl","ps","pt",
+  "qu",
+  "rm","rn","ro","ru","rw",
+  "sa","sc","sd","se","sg","si","sk","sl","sm","sn","so","sq","sr","ss","st","su","sv","sw",
+  "ta","te","tg","th","ti","tk","tl","tn","to","tr","ts","tt","tw","ty",
+  "ug","uk","ur","uz",
+  "ve","vi","vo",
+  "wa","wo",
+  "xh",
+  "yi","yo",
+  "za","zh","zu",
+  // Common extended codes
+  "pt-br","pt-pt","zh-cn","zh-tw","en-us","en-gb","es-es","es-mx","fr-fr","fr-ca","de-de","de-at",
+]);
+
 export function buildTree(urls: string[]): TreeNode {
   if (urls.length === 0) {
     return {
@@ -58,6 +90,22 @@ export function buildTree(urls: string[]): TreeNode {
 
   let nodeCounter = 0;
 
+  // First pass: collect all first-level segments to detect multi-language sites
+  const firstSegments = new Set<string>();
+  for (const urlStr of urls) {
+    try {
+      const url = new URL(urlStr);
+      const segments = url.pathname.split("/").filter(Boolean);
+      if (segments.length > 0) {
+        firstSegments.add(segments[0].toLowerCase());
+      }
+    } catch { continue; }
+  }
+
+  // It's multi-language if 2+ first-level segments are language codes
+  const detectedLangs = [...firstSegments].filter((s) => LANG_CODES.has(s));
+  const isMultilang = detectedLangs.length >= 2;
+
   for (const urlStr of urls) {
     try {
       const url = new URL(urlStr);
@@ -81,6 +129,7 @@ export function buildTree(urls: string[]): TreeNode {
       for (let i = 0; i < segments.length; i++) {
         currentPath += "/" + segments[i];
         const isLastSegment = i === segments.length - 1;
+        const isLangSegment = isMultilang && i === 0 && LANG_CODES.has(segments[i].toLowerCase());
 
         let existingNode = nodeMap.get(currentPath);
 
@@ -88,11 +137,14 @@ export function buildTree(urls: string[]): TreeNode {
           nodeCounter++;
           existingNode = {
             id: `node-${nodeCounter}`,
-            label: decodeURIComponent(segments[i]).replace(/-/g, " "),
+            label: isLangSegment
+              ? segments[i].toUpperCase()
+              : decodeURIComponent(segments[i]).replace(/-/g, " "),
             url: isLastSegment ? urlStr : "",
             fullPath: currentPath,
             children: [],
             depth: i + 1,
+            isLanguage: isLangSegment || undefined,
           };
           nodeMap.set(currentPath, existingNode);
           parentNode.children.push(existingNode);

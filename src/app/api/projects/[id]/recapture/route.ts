@@ -39,6 +39,7 @@ export async function POST(req: Request, { params }: Params) {
       description: result.description || existing.description,
       screenshotPath: result.screenshotPath || existing.screenshotPath,
       seo: result.seo ?? existing.seo,
+      a11y: result.a11y ?? existing.a11y,
     };
 
     // Clear any saved drawing for this page (screenshot changed)

@@ -9,7 +9,7 @@ declare global {
 }
 
 function PageNodeComponent({ data }: { data: PageNodeData }) {
-  const { label, url, fullPath, screenshotUrl, customImageUrl, title, depth, isVirtual, hasError, seoScore, nodeId, onNameChange } = data;
+  const { label, url, fullPath, screenshotUrl, customImageUrl, title, depth, isVirtual, isLanguage, hasError, seoScore, a11yScore, nodeId, onNameChange } = data;
   const displayImage = customImageUrl || screenshotUrl;
   const displayTitle = title || label;
 
@@ -54,11 +54,40 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
     }
   }, [editValue, displayTitle, onNameChange, nodeId, url, data.isCustom]);
 
-  const getSeoColor = (score: number) => {
+  const getScoreColor = (score: number) => {
     if (score >= 8) return "bg-green-500";
     if (score >= 5) return "bg-amber-500";
     return "bg-red-500";
   };
+
+  // ── Language nodes: prominent branch label ─────────────────────────
+  if (isLanguage) {
+    return (
+      <div className="flex flex-col items-center" style={{ width: 160 }}>
+        <Handle type="target" position={Position.Top} className="!bg-blue-500 !w-3 !h-3" />
+        <div className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow-md flex items-center gap-2">
+          <span className="text-sm">🌐</span>
+          <span className="text-sm font-bold uppercase tracking-wider">{displayTitle}</span>
+        </div>
+        <span className="text-[9px] text-gray-400 mt-1">{fullPath}</span>
+        <Handle type="source" position={Position.Bottom} className="!bg-blue-500 !w-3 !h-3" />
+      </div>
+    );
+  }
+
+  // ── Virtual nodes: simple text label, no card ──────────────────────
+  if (isVirtual) {
+    return (
+      <div className="flex flex-col items-center" style={{ width: 140 }}>
+        <Handle type="target" position={Position.Top} className="!bg-gray-300 !w-2.5 !h-2.5" />
+        <span className="text-sm font-bold text-gray-800 text-center leading-tight line-clamp-2 capitalize hover:text-blue-600 transition-colors">
+          {displayTitle}
+        </span>
+        <span className="text-[9px] text-gray-400 mt-0.5">{fullPath}</span>
+        <Handle type="source" position={Position.Bottom} className="!bg-gray-300 !w-2.5 !h-2.5" />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -66,7 +95,6 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
         rounded-xl shadow-lg border-2 overflow-hidden bg-white
         transition-all duration-200
         ${depth === 0 ? "border-blue-500 ring-2 ring-blue-200" : "border-gray-200"}
-        ${isVirtual ? "border-dashed border-gray-300 opacity-75" : ""}
         ${hasError ? "border-red-400 bg-red-50" : ""}
         hover:shadow-xl hover:border-blue-400 cursor-pointer
       `}
@@ -163,15 +191,18 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
           </div>
         )}
 
-        {isVirtual && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-50/80">
-            <span className="text-xs text-gray-400 font-medium">Ruta intermedia</span>
-          </div>
-        )}
-
-        {seoScore !== undefined && (
-          <div className={`absolute bottom-1.5 right-1.5 w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold ${getSeoColor(seoScore)} shadow-md`} title={`SEO: ${seoScore}/10`}>
-            {seoScore}
+        {(seoScore !== undefined || a11yScore !== undefined) && (
+          <div className="absolute bottom-1.5 right-1.5 flex gap-1">
+            {seoScore !== undefined && (
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold ${getScoreColor(seoScore)} shadow-md`} title={`SEO: ${seoScore}/10`}>
+                {seoScore}
+              </div>
+            )}
+            {a11yScore !== undefined && (
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold ${getScoreColor(a11yScore)} shadow-md ring-1 ring-white`} title={`A11y: ${a11yScore}/10`}>
+                {a11yScore}
+              </div>
+            )}
           </div>
         )}
       </div>

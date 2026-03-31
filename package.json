@@ -6,7 +6,8 @@
         "dev": "next dev --turbopack",
         "build": "next build",
         "start": "next start",
-        "lint": "next lint"
+        "lint": "next lint",
+        "postinstall": "npx puppeteer browsers install chrome"
     },
     "dependencies": {
         "@supabase/ssr": "^0.5",
@@ -15,7 +16,6 @@
         "react": "^19.0",
         "react-dom": "^19.0",
         "@xyflow/react": "^12.4",
-        "dagre": "^0.8.5",
         "fast-xml-parser": "^5.0",
         "uuid": "^11.1",
         "html2canvas": "^1.4"
@@ -24,7 +24,6 @@
         "typescript": "^5.7",
         "@types/react": "^19.0",
         "@types/react-dom": "^19.0",
-        "@types/dagre": "^0.7",
         "@types/uuid": "^10.0",
         "@tailwindcss/postcss": "^4.0",
         "tailwindcss": "^4.0",

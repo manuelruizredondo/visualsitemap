@@ -26,7 +26,7 @@ import ProgressOverlay from "./ProgressOverlay";
 import NodeDrawer from "./NodeDrawer";
 import { treeToFlow, customNodesToFlow, type PageNodeData } from "@/lib/tree-to-flow";
 import { getLayoutedElements } from "@/lib/layout";
-import type { Project, ScreenshotJob, Annotation, PageMeta, CustomNode, Tag } from "@/types";
+import type { Project, ScreenshotJob, Annotation, PageMeta, CustomNode, Tag, A11yData } from "@/types";
 
 // Global project ID so PageNode can call the API without prop-drilling through React Flow
 declare global {
@@ -34,6 +34,43 @@ declare global {
 }
 
 const nodeTypes = { pageNode: PageNodeComponent };
+
+/** Calculate accessibility score (0-10) from A11yData */
+function calculateA11yScore(a11y: A11yData): number {
+  let score = 10; // start perfect, deduct for issues
+
+  // Images without alt (-1, capped)
+  if (a11y.totalImages > 0 && a11y.imgWithoutAlt > 0) score--;
+
+  // Buttons without label
+  if (a11y.buttonsWithoutLabel > 0) score--;
+
+  // Inputs without label
+  if (a11y.inputsWithoutLabel > 0) score--;
+
+  // Links without text
+  if (a11y.linksWithoutText > 0) score--;
+
+  // Missing lang attribute
+  if (a11y.missingLang) score--;
+
+  // Heading order broken
+  if (!a11y.headingOrderValid) score--;
+
+  // Low contrast texts (threshold: 3+)
+  if (a11y.lowContrastTexts >= 3) score--;
+
+  // Missing skip link
+  if (a11y.missingSkipLink) score--;
+
+  // Missing main landmark
+  if (a11y.missingMainLandmark) score--;
+
+  // Autoplaying media
+  if (a11y.autoplaying > 0) score--;
+
+  return Math.max(0, score);
+}
 
 interface SitemapCanvasProps {
   projectId: string;
@@ -103,8 +140,8 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
 
           if (meta) {
             let seoScore: number | undefined;
+            let a11yScore: number | undefined;
             if (meta.seo) {
-              // Calculate SEO score
               let score = 0;
               if (meta.seo.titleLength >= 30 && meta.seo.titleLength <= 60) score++;
               if (meta.seo.descriptionLength >= 120 && meta.seo.descriptionLength <= 160) score++;
@@ -118,6 +155,9 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
               if (meta.seo.wordCount > 300) score++;
               seoScore = score;
             }
+            if (meta.a11y) {
+              a11yScore = calculateA11yScore(meta.a11y);
+            }
             const customName = proj.pageNames?.[n.data.url];
             return {
               ...n,
@@ -127,6 +167,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
                 customImageUrl: meta.customImageUrl || undefined,
                 title: customName || meta.title || n.data.label,
                 seoScore,
+                a11yScore,
                 tags,
                 onNameChange: stableNameChange,
               },
@@ -234,6 +275,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
                 description: r.description || "",
                 screenshotPath: r.screenshotPath,
                 seo: r.seo,
+                a11y: r.a11y,
               };
             }
           });
@@ -619,6 +661,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
 
       // Update node screenshot in canvas
       let seoScore: number | undefined;
+      let a11yScore: number | undefined;
       if (meta.seo) {
         let score = 0;
         if (meta.seo.titleLength >= 30 && meta.seo.titleLength <= 60) score++;
@@ -632,6 +675,9 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
         if (meta.seo.totalImages === 0 || meta.seo.imgWithoutAlt === 0) score++;
         if (meta.seo.wordCount > 300) score++;
         seoScore = score;
+      }
+      if (meta.a11y) {
+        a11yScore = calculateA11yScore(meta.a11y);
       }
 
       // Cache-bust the screenshot URL
@@ -648,6 +694,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
                 screenshotUrl: bustUrl,
                 title: meta.title || n.data.label,
                 seoScore,
+                a11yScore,
               },
             };
           }
