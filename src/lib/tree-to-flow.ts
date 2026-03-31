@@ -49,7 +49,7 @@ export function treeToFlow(tree: TreeNode): {
         id: `edge-${parentId}-${node.id}`,
         source: parentId,
         target: node.id,
-        type: "smoothstep",
+        type: "bezier",
         style: { stroke: "#94a3b8", strokeWidth: 2 },
       });
     }
@@ -88,7 +88,7 @@ export function customNodesToFlow(customNodes: CustomNode[]): {
       id: `edge-${cn.parentNodeId}-${cn.id}`,
       source: cn.parentNodeId,
       target: cn.id,
-      type: "smoothstep",
+      type: "bezier",
       style: { stroke: "#94a3b8", strokeWidth: 2 },
     }));
 

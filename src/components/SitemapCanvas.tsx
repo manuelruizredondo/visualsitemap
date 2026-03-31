@@ -16,6 +16,7 @@ import {
   type Edge,
   type NodeMouseHandler,
   type OnConnectEnd,
+  type OnNodeDrag,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useRouter } from "next/navigation";
@@ -323,6 +324,68 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
       setTimeout(() => fitView({ padding: 0.2 }), 50);
     },
     [nodes, edges, setNodes, setEdges, fitView]
+  );
+
+  // ── Drag parent → move descendants too ──────────────────────────────
+  const dragStartPos = useRef<Map<string, { x: number; y: number }>>(new Map());
+
+  const getDescendantIds = useCallback(
+    (nodeId: string): Set<string> => {
+      const desc = new Set<string>();
+      const stack = [nodeId];
+      while (stack.length > 0) {
+        const current = stack.pop()!;
+        for (const e of edges) {
+          if (e.source === current && !desc.has(e.target)) {
+            desc.add(e.target);
+            stack.push(e.target);
+          }
+        }
+      }
+      return desc;
+    },
+    [edges]
+  );
+
+  const onNodeDragStart: OnNodeDrag = useCallback(
+    (_event, node) => {
+      const posMap = new Map<string, { x: number; y: number }>();
+      posMap.set(node.id, { ...node.position });
+      const descIds = getDescendantIds(node.id);
+      for (const n of nodes) {
+        if (descIds.has(n.id)) {
+          posMap.set(n.id, { ...n.position });
+        }
+      }
+      dragStartPos.current = posMap;
+    },
+    [nodes, getDescendantIds]
+  );
+
+  const onNodeDrag: OnNodeDrag = useCallback(
+    (_event, node) => {
+      const startPos = dragStartPos.current.get(node.id);
+      if (!startPos) return;
+      const dx = node.position.x - startPos.x;
+      const dy = node.position.y - startPos.y;
+      if (dx === 0 && dy === 0) return;
+
+      const descIds = getDescendantIds(node.id);
+      if (descIds.size === 0) return;
+
+      setNodes((prev) =>
+        prev.map((n) => {
+          if (!descIds.has(n.id)) return n;
+          const orig = dragStartPos.current.get(n.id);
+          if (!orig) return n;
+          return {
+            ...n,
+            position: { x: orig.x + dx, y: orig.y + dy },
+          };
+        })
+      );
+    },
+    [getDescendantIds, setNodes]
   );
 
   const updateNodesForSearch = useCallback(
@@ -812,6 +875,16 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
         >
           Centrar
         </button>
+        <button
+          onClick={() => onLayout(direction)}
+          className="px-3 py-2 text-sm rounded-lg border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 transition-all flex items-center gap-1.5"
+          title="Resetear posiciones de las cajas"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Resetear
+        </button>
         <div className="w-px h-6 bg-gray-200" />
         <div className="flex items-center gap-1 bg-white rounded-lg border border-gray-200">
           <input
@@ -953,6 +1026,8 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
         nodeTypes={nodeTypes}
         onNodeClick={onNodeClick}
         onConnectEnd={onConnectEnd}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDrag={onNodeDrag}
         fitView
         minZoom={0.05}
         maxZoom={2}

@@ -7,12 +7,11 @@ const V_GAP = 50;
 const MARGIN = 50;
 
 /**
- * Layout en árbol:
- * - Nivel 1 (hijos del raíz, depth 1): en fila horizontal.
- * - A partir del nivel 2 (depth >= 2): hijos apilados en vertical bajo su padre
- *   (como en organigramas con columna y ramas en L).
+ * Layout en árbol clásico (top-down):
+ * - Cada padre se centra horizontalmente sobre sus hijos.
+ * - Los hijos de TODOS los niveles se distribuyen en fila horizontal.
  *
- * Modo LR: misma lógica con coordenadas transpuestas (primera fila vertical, resto horizontal).
+ * Modo LR: misma lógica con coordenadas transpuestas.
  */
 export function getLayoutedElements<T extends Record<string, unknown>>(
   nodes: Node<T>[],
@@ -42,17 +41,11 @@ export function getLayoutedElements<T extends Record<string, unknown>>(
     };
   }
 
+  // ── Subtree width: horizontal span needed by a node and all its descendants ──
   const memo = new Map<string, { w: number; h: number }>();
 
   function subtreeSize(id: string): { w: number; h: number } {
     if (memo.has(id)) return memo.get(id)!;
-
-    const n = nodeMap.get(id);
-    if (!n) {
-      const z = { w: NODE_WIDTH, h: NODE_HEIGHT };
-      memo.set(id, z);
-      return z;
-    }
 
     const ch = children.get(id) ?? [];
     if (ch.length === 0) {
@@ -61,66 +54,45 @@ export function getLayoutedElements<T extends Record<string, unknown>>(
       return z;
     }
 
-    const depth = (n.data as { depth?: number }).depth ?? 0;
-
-    if (depth === 0) {
-      let w = 0;
-      let maxChildH = 0;
-      ch.forEach((cid, i) => {
-        const s = subtreeSize(cid);
-        w += s.w + (i > 0 ? H_GAP : 0);
-        maxChildH = Math.max(maxChildH, s.h);
-      });
-      const z = {
-        w: Math.max(NODE_WIDTH, w),
-        h: NODE_HEIGHT + V_GAP + maxChildH,
-      };
-      memo.set(id, z);
-      return z;
-    }
-
-    let maxW = NODE_WIDTH;
-    let h = NODE_HEIGHT;
-    ch.forEach((cid) => {
+    // Children in a horizontal row → total width is sum of children widths + gaps
+    let childrenW = 0;
+    let maxChildH = 0;
+    ch.forEach((cid, i) => {
       const s = subtreeSize(cid);
-      maxW = Math.max(maxW, s.w);
-      h += V_GAP + s.h;
+      childrenW += s.w + (i > 0 ? H_GAP : 0);
+      maxChildH = Math.max(maxChildH, s.h);
     });
-    const z = { w: maxW, h };
+
+    const z = {
+      w: Math.max(NODE_WIDTH, childrenW),
+      h: NODE_HEIGHT + V_GAP + maxChildH,
+    };
     memo.set(id, z);
     return z;
   }
 
   roots.forEach((r) => subtreeSize(r));
 
+  // ── Place nodes: parent centered above its children row ──
   const positions = new Map<string, { x: number; y: number }>();
 
   function place(id: string, x: number, y: number): void {
-    positions.set(id, { x, y });
-    const n = nodeMap.get(id);
-    if (!n) return;
-
     const ch = children.get(id) ?? [];
+    const mySize = subtreeSize(id);
+
+    // Center this node within its allocated subtree width
+    positions.set(id, { x: x + mySize.w / 2 - NODE_WIDTH / 2, y });
+
     if (ch.length === 0) return;
 
-    const depth = (n.data as { depth?: number }).depth ?? 0;
-
-    if (depth === 0) {
-      let curX = x;
-      const childY = y + NODE_HEIGHT + V_GAP;
-      ch.forEach((cid) => {
-        const s = subtreeSize(cid);
-        place(cid, curX, childY);
-        curX += s.w + H_GAP;
-      });
-    } else {
-      let curY = y + NODE_HEIGHT + V_GAP;
-      ch.forEach((cid) => {
-        place(cid, x, curY);
-        const s = subtreeSize(cid);
-        curY += s.h + V_GAP;
-      });
-    }
+    // Place children in a horizontal row below
+    const childY = y + NODE_HEIGHT + V_GAP;
+    let curX = x;
+    ch.forEach((cid) => {
+      const s = subtreeSize(cid);
+      place(cid, curX, childY);
+      curX += s.w + H_GAP;
+    });
   }
 
   let offsetX = MARGIN;
@@ -129,6 +101,7 @@ export function getLayoutedElements<T extends Record<string, unknown>>(
     offsetX += subtreeSize(rootId).w + H_GAP;
   });
 
+  // ── Normalize positions ──
   let minX = Infinity;
   let minY = Infinity;
   positions.forEach((p) => {
