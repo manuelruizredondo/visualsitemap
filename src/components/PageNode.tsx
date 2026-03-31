@@ -54,6 +54,9 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
     }
   }, [editValue, displayTitle, onNameChange, nodeId, url, data.isCustom]);
 
+  // Bracket children (depth >= 3) reciben la conexión por la izquierda
+  const targetPos = depth >= 3 ? Position.Left : Position.Top;
+
   const getScoreColor = (score: number) => {
     if (score >= 8) return "bg-green-500";
     if (score >= 5) return "bg-amber-500";
@@ -64,7 +67,7 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
   if (isLanguage) {
     return (
       <div className="flex flex-col items-center" style={{ width: 160 }}>
-        <Handle type="target" position={Position.Top} className="!bg-blue-500 !w-3 !h-3" />
+        <Handle type="target" position={targetPos} className="!bg-blue-500 !w-3 !h-3" />
         <div className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow-md flex items-center gap-2">
           <span className="text-sm">🌐</span>
           <span className="text-sm font-bold uppercase tracking-wider">{displayTitle}</span>
@@ -79,7 +82,7 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
   if (isVirtual) {
     return (
       <div className="flex flex-col items-center" style={{ width: 140 }}>
-        <Handle type="target" position={Position.Top} className="!bg-gray-300 !w-2.5 !h-2.5" />
+        <Handle type="target" position={targetPos} className="!bg-gray-300 !w-2.5 !h-2.5" />
         <span className="text-sm font-bold text-gray-800 text-center leading-tight line-clamp-2 capitalize hover:text-blue-600 transition-colors">
           {displayTitle}
         </span>
@@ -100,7 +103,7 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
       `}
       style={{ width: 220 }}
     >
-      <Handle type="target" position={Position.Top} className="!bg-blue-500 !w-3 !h-3" />
+      <Handle type="target" position={targetPos} className="!bg-blue-500 !w-3 !h-3" />
 
       {/* Page title - prominent at top, double-click to edit */}
       <div className="px-3 py-2.5 border-b border-gray-100 bg-white">

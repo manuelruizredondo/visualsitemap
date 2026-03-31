@@ -45,11 +45,13 @@ export function treeToFlow(tree: TreeNode): {
     });
 
     if (parentId) {
+      // depth >= 3 → bracket (smoothstep crea ángulo recto: baja → gira a la derecha)
+      // depth < 3  → bezier (curva suave)
       edges.push({
         id: `edge-${parentId}-${node.id}`,
         source: parentId,
         target: node.id,
-        type: "bezier",
+        type: node.depth >= 3 ? "smoothstep" : "bezier",
         style: { stroke: "#94a3b8", strokeWidth: 2 },
       });
     }

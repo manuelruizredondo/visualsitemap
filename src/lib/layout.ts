@@ -7,12 +7,17 @@ const V_GAP = 50;
 const MARGIN = 50;
 
 /**
- * Layout en árbol clásico (top-down):
- * - Cada padre se centra horizontalmente sobre sus hijos.
- * - Los hijos de TODOS los niveles se distribuyen en fila horizontal.
- *
- * Modo LR: misma lógica con coordenadas transpuestas.
+ * En modo bracket, los hijos se posicionan a la derecha del centro del padre.
+ * Distancia desde el borde izquierdo del padre al borde izquierdo del hijo.
  */
+const BRACKET_INDENT = NODE_WIDTH / 2 + 30;
+
+/**
+ * A partir de este depth, los hijos se apilan en vertical estilo bracket
+ * en lugar de distribuirse en fila horizontal.
+ */
+const VERTICAL_FROM_DEPTH = 2;
+
 export function getLayoutedElements<T extends Record<string, unknown>>(
   nodes: Node<T>[],
   edges: Edge[],
@@ -41,7 +46,16 @@ export function getLayoutedElements<T extends Record<string, unknown>>(
     };
   }
 
-  // ── Subtree width: horizontal span needed by a node and all its descendants ──
+  function getDepth(id: string): number {
+    const n = nodeMap.get(id);
+    return (n?.data as { depth?: number })?.depth ?? 0;
+  }
+
+  function isVertical(id: string): boolean {
+    return getDepth(id) >= VERTICAL_FROM_DEPTH;
+  }
+
+  // ── Subtree sizes ─────────────────────────────────────────────────
   const memo = new Map<string, { w: number; h: number }>();
 
   function subtreeSize(id: string): { w: number; h: number } {
@@ -54,54 +68,93 @@ export function getLayoutedElements<T extends Record<string, unknown>>(
       return z;
     }
 
-    // Children in a horizontal row → total width is sum of children widths + gaps
-    let childrenW = 0;
-    let maxChildH = 0;
-    ch.forEach((cid, i) => {
-      const s = subtreeSize(cid);
-      childrenW += s.w + (i > 0 ? H_GAP : 0);
-      maxChildH = Math.max(maxChildH, s.h);
-    });
-
-    const z = {
-      w: Math.max(NODE_WIDTH, childrenW),
-      h: NODE_HEIGHT + V_GAP + maxChildH,
-    };
-    memo.set(id, z);
-    return z;
+    if (isVertical(id)) {
+      // Bracket: hijos apilados en vertical, indentados a la derecha
+      let maxChildW = 0;
+      let totalChildH = 0;
+      ch.forEach((cid, i) => {
+        const s = subtreeSize(cid);
+        maxChildW = Math.max(maxChildW, s.w);
+        totalChildH += s.h + (i > 0 ? V_GAP : 0);
+      });
+      const z = {
+        w: Math.max(NODE_WIDTH, BRACKET_INDENT + maxChildW),
+        h: NODE_HEIGHT + V_GAP + totalChildH,
+      };
+      memo.set(id, z);
+      return z;
+    } else {
+      // Horizontal: hijos en fila
+      let childrenW = 0;
+      let maxChildH = 0;
+      ch.forEach((cid, i) => {
+        const s = subtreeSize(cid);
+        childrenW += s.w + (i > 0 ? H_GAP : 0);
+        maxChildH = Math.max(maxChildH, s.h);
+      });
+      const z = {
+        w: Math.max(NODE_WIDTH, childrenW),
+        h: NODE_HEIGHT + V_GAP + maxChildH,
+      };
+      memo.set(id, z);
+      return z;
+    }
   }
 
   roots.forEach((r) => subtreeSize(r));
 
-  // ── Place nodes: parent centered above its children row ──
+  // ── Placement ─────────────────────────────────────────────────────
   const positions = new Map<string, { x: number; y: number }>();
 
-  function place(id: string, x: number, y: number): void {
+  /**
+   * place() recibe la esquina izquierda del espacio asignado (x) y la Y.
+   * - Modo horizontal: el nodo se centra en su subtree width.
+   * - Modo bracket: el nodo queda left-aligned (llamado con bracketAlign=true).
+   */
+  function place(id: string, x: number, y: number, bracketAlign = false): void {
     const ch = children.get(id) ?? [];
     const mySize = subtreeSize(id);
 
-    // Center this node within its allocated subtree width
-    positions.set(id, { x: x + mySize.w / 2 - NODE_WIDTH / 2, y });
+    if (bracketAlign) {
+      // Left-aligned: el nodo se posiciona directamente en x
+      positions.set(id, { x, y });
+    } else {
+      // Centered: el nodo se centra en su espacio asignado
+      positions.set(id, { x: x + mySize.w / 2 - NODE_WIDTH / 2, y });
+    }
 
     if (ch.length === 0) return;
 
-    // Place children in a horizontal row below
+    const nodeX = positions.get(id)!.x;
     const childY = y + NODE_HEIGHT + V_GAP;
-    let curX = x;
-    ch.forEach((cid) => {
-      const s = subtreeSize(cid);
-      place(cid, curX, childY);
-      curX += s.w + H_GAP;
-    });
+
+    if (isVertical(id)) {
+      // Bracket: hijos left-aligned a la derecha del padre
+      const childBaseX = nodeX + BRACKET_INDENT;
+      let curY = childY;
+      ch.forEach((cid) => {
+        const s = subtreeSize(cid);
+        place(cid, childBaseX, curY, true); // bracket children are left-aligned
+        curY += s.h + V_GAP;
+      });
+    } else {
+      // Horizontal: hijos en fila, centrados en su espacio
+      let curX = x;
+      ch.forEach((cid) => {
+        const s = subtreeSize(cid);
+        place(cid, curX, childY, false);
+        curX += s.w + H_GAP;
+      });
+    }
   }
 
   let offsetX = MARGIN;
   roots.forEach((rootId) => {
-    place(rootId, offsetX, MARGIN);
+    place(rootId, offsetX, MARGIN, false);
     offsetX += subtreeSize(rootId).w + H_GAP;
   });
 
-  // ── Normalize positions ──
+  // ── Normalize ─────────────────────────────────────────────────────
   let minX = Infinity;
   let minY = Infinity;
   positions.forEach((p) => {
