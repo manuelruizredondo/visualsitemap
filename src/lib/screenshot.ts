@@ -67,17 +67,30 @@ async function navigatePage(page: Page, url: string): Promise<void> {
 
 /**
  * Scroll through the entire page using wheel events.
- * Locomotive Scroll, GSAP ScrollTrigger, and IntersectionObserver-based
+ * Locomotive Scroll, Lenis, GSAP ScrollTrigger, and IntersectionObserver-based
  * animations all respond to native wheel events, which this dispatches.
  */
 async function autoScrollPage(page: Page): Promise<void> {
   await page.evaluate(async () => {
     // Get an estimate of total scroll distance.
     // For Locomotive Scroll the real height is in its scroll container.
+    // For Lenis the wrapper is [data-lenis-wrapper] or the Lenis instance
+    // attaches to <html> with class "lenis".
     const locoContainer = document.querySelector("[data-scroll-container]");
+    const lenisWrapper =
+      document.querySelector("[data-lenis-wrapper]") ||
+      document.querySelector(".lenis-wrapper");
+    const lenisContent =
+      document.querySelector("[data-lenis-content]") ||
+      document.querySelector(".lenis-content");
+
     const estimatedHeight = locoContainer
       ? (locoContainer as HTMLElement).scrollHeight
-      : Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+      : lenisContent
+        ? (lenisContent as HTMLElement).scrollHeight
+        : lenisWrapper
+          ? (lenisWrapper as HTMLElement).scrollHeight
+          : Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
 
     const steps = Math.ceil(estimatedHeight / 600) + 5; // ~600px per step
     const delay = 250; // ms between steps — enough for Locomotive to update
@@ -106,17 +119,23 @@ async function autoScrollPage(page: Page): Promise<void> {
 }
 
 /**
- * Neutralise Locomotive Scroll (and similar smooth-scroll libraries) so that
- * Puppeteer can capture the full page height.
+ * Neutralise Locomotive Scroll, Lenis, and similar smooth-scroll libraries
+ * so that Puppeteer can capture the full page height.
  *
  * Locomotive sets `overflow: hidden` on <html> and <body> via the class
  * `has-scroll-smooth`, and applies `transform: translate3d(0, -Ypx, 0)` to
- * the scroll-content wrapper. Removing the class + resetting the transform
- * is cleaner than fighting specificity with !important.
+ * the scroll-content wrapper.
+ *
+ * Lenis sets `overflow: hidden` on <html> via the class `lenis` /
+ * `lenis-smooth`, and uses `transform: translateY(-Ypx)` on
+ * [data-lenis-content] or the first child of [data-lenis-wrapper].
+ *
+ * Removing the classes + resetting transforms is cleaner than fighting
+ * specificity with !important.
  */
 async function prepareForScreenshot(page: Page): Promise<void> {
   await page.evaluate(() => {
-    // 1. Remove Locomotive Scroll classes from <html> and <body>
+    // ── 1. Remove Locomotive Scroll classes ──────────────────────────
     const locoClasses = [
       "has-scroll-smooth",
       "has-scroll-init",
@@ -128,19 +147,62 @@ async function prepareForScreenshot(page: Page): Promise<void> {
       document.body.classList.remove(cls);
     });
 
-    // 2. Reset the transform that Locomotive applied to scroll-content
-    const scrollContent =
-      document.querySelector("[data-scroll-content]") ||
-      // Some setups use the first child of [data-scroll-container]
-      document.querySelector("[data-scroll-container] > *");
-    if (scrollContent) {
-      (scrollContent as HTMLElement).style.transform = "none";
-      (scrollContent as HTMLElement).style.webkitTransform = "none";
-      (scrollContent as HTMLElement).style.willChange = "auto";
+    // ── 2. Remove Lenis classes ─────────────────────────────────────
+    const lenisClasses = [
+      "lenis",
+      "lenis-smooth",
+      "lenis-scrolling",
+      "lenis-stopped",
+    ];
+    lenisClasses.forEach((cls) => {
+      document.documentElement.classList.remove(cls);
+      document.body.classList.remove(cls);
+    });
+
+    // ── 3. Try to destroy the Lenis instance so it stops fighting us ─
+    try {
+      // Lenis is often stored on window or as a global
+      const win = window as unknown as Record<string, unknown>;
+      const lenisInstance =
+        win.lenis || win.Lenis || win.__lenis || win.lenisInstance;
+      if (lenisInstance && typeof (lenisInstance as any).destroy === "function") {
+        (lenisInstance as any).destroy();
+      }
+    } catch {
+      // Lenis not found as a global — that's fine
     }
 
-    // 3. Force overflow visible on the key elements
-    //    (Locomotive's class removal already handles html/body, but be explicit)
+    // ── 4. Reset Locomotive transforms ──────────────────────────────
+    const locoContent =
+      document.querySelector("[data-scroll-content]") ||
+      document.querySelector("[data-scroll-container] > *");
+    if (locoContent) {
+      (locoContent as HTMLElement).style.transform = "none";
+      (locoContent as HTMLElement).style.webkitTransform = "none";
+      (locoContent as HTMLElement).style.willChange = "auto";
+    }
+
+    // ── 5. Reset Lenis transforms ───────────────────────────────────
+    const lenisContent =
+      document.querySelector("[data-lenis-content]") ||
+      document.querySelector(".lenis-content") ||
+      document.querySelector("[data-lenis-wrapper] > *");
+    if (lenisContent) {
+      (lenisContent as HTMLElement).style.transform = "none";
+      (lenisContent as HTMLElement).style.webkitTransform = "none";
+      (lenisContent as HTMLElement).style.willChange = "auto";
+    }
+
+    const lenisWrapper =
+      document.querySelector("[data-lenis-wrapper]") ||
+      document.querySelector(".lenis-wrapper");
+    if (lenisWrapper) {
+      (lenisWrapper as HTMLElement).style.overflow = "visible";
+      (lenisWrapper as HTMLElement).style.height = "auto";
+      (lenisWrapper as HTMLElement).style.maxHeight = "none";
+    }
+
+    // ── 6. Force overflow visible on key elements ───────────────────
     const makeVisible = (el: Element | null) => {
       if (!el) return;
       const h = el as HTMLElement;
@@ -152,7 +214,7 @@ async function prepareForScreenshot(page: Page): Promise<void> {
     makeVisible(document.body);
     makeVisible(document.querySelector("[data-scroll-container]"));
 
-    // 4. Scroll native window back to top
+    // ── 7. Scroll native window back to top ─────────────────────────
     window.scrollTo(0, 0);
   });
 
@@ -253,16 +315,22 @@ async function capturePage(
 
     // Measure the real content height after reflow
     const fullHeight = await page.evaluate(() => {
-      const scrollContent =
+      const locoContent =
         document.querySelector("[data-scroll-content]") ||
         document.querySelector("[data-scroll-container] > *");
+      const lenisContent =
+        document.querySelector("[data-lenis-content]") ||
+        document.querySelector(".lenis-content") ||
+        document.querySelector("[data-lenis-wrapper] > *");
 
       return Math.max(
         document.body.scrollHeight,
         document.body.offsetHeight,
         document.documentElement.scrollHeight,
-        (scrollContent as HTMLElement)?.scrollHeight ?? 0,
-        (scrollContent as HTMLElement)?.offsetHeight ?? 0,
+        (locoContent as HTMLElement)?.scrollHeight ?? 0,
+        (locoContent as HTMLElement)?.offsetHeight ?? 0,
+        (lenisContent as HTMLElement)?.scrollHeight ?? 0,
+        (lenisContent as HTMLElement)?.offsetHeight ?? 0,
         900 // minimum fallback
       );
     });
