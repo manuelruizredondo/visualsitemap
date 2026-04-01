@@ -257,8 +257,12 @@ export default function NodeDrawer({
 
   return (
     <div
-      className={`absolute right-0 top-0 z-50 h-full flex ${visible ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"}`}
-      style={{ transition: "transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease" }}
+      className="absolute right-0 top-0 z-50 h-full flex"
+      style={{
+        transform: visible ? "translateX(0)" : "translateX(100%)",
+        opacity: visible ? 1 : 0,
+        transition: "transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease",
+      }}
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
