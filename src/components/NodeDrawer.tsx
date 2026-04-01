@@ -310,7 +310,7 @@ export default function NodeDrawer({
         </div>
 
         {/* Scrollable content */}
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
           {activeTab === "info" && (
             <>
               {/* Screenshot */}
