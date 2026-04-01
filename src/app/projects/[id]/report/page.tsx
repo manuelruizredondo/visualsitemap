@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getProject } from "@/lib/projects";
 import type { Project, PageMeta, Annotation } from "@/types";
+import PrintButton from "./PrintButton";
 
 export const dynamic = "force-dynamic";
 
@@ -113,6 +114,7 @@ export default async function ReportPage({ params }: Props) {
   });
 
   const totalPages = pages.length;
+  const pagesWithData = pages.filter((p) => p.seoScore !== null || p.a11yScore !== null).length;
   const pagesWithIssues = pages.filter(
     (p) =>
       (p.seoScore !== null && p.seoScore < 5) ||
@@ -193,31 +195,7 @@ export default async function ReportPage({ params }: Props) {
       </head>
       <body>
         {/* Print button (hidden when printing) */}
-        <button
-          className="no-print print-btn"
-          onClick={() => {}}
-        >
-          <svg
-            width="16"
-            height="16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"
-            />
-          </svg>
-          Imprimir / Guardar PDF
-        </button>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `document.querySelector('.print-btn').onclick = () => window.print();`,
-          }}
-        />
+        <PrintButton />
 
         {/* Cover */}
         <div className="cover">
@@ -239,10 +217,12 @@ export default async function ReportPage({ params }: Props) {
               <div className="stat-label">Páginas aprobadas</div>
             </div>
             <div className="stat-card">
-              <div className="stat-number" style={{ color: "#ef4444" }}>
-                {pagesWithIssues}
+              <div className="stat-number" style={{ color: pagesWithData === 0 ? "#9ca3af" : "#ef4444" }}>
+                {pagesWithData === 0 ? "—" : pagesWithIssues}
               </div>
-              <div className="stat-label">Páginas con issues</div>
+              <div className="stat-label">
+                {pagesWithData === 0 ? "Issues (sin datos SEO)" : "Páginas con issues"}
+              </div>
             </div>
             <div className="stat-card">
               <div className="stat-number" style={{ color: "#5a3bdd" }}>
