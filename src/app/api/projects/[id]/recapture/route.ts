@@ -44,6 +44,17 @@ export async function POST(req: Request, { params }: Params) {
       a11y: result.a11y ?? existing.a11y,
     };
 
+    // If this is the home page (root path), use its screenshot as the project thumbnail
+    try {
+      const parsedUrl = new URL(url);
+      const isHome = parsedUrl.pathname === "/" || parsedUrl.pathname === "";
+      if (isHome && (result.thumbnailPath || result.screenshotPath)) {
+        project.thumbnailUrl = result.thumbnailPath || result.screenshotPath;
+      }
+    } catch {
+      // ignore invalid URL
+    }
+
     // Clear any saved drawing for this page (screenshot changed)
     if (project.pageDrawings?.[url]) {
       delete project.pageDrawings[url];
