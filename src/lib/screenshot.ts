@@ -297,6 +297,7 @@ async function dismissCookieBanners(page: Page): Promise<void> {
     // Common accept-button selectors (ordered by specificity)
     const selectors = [
       '#cookie-accept',
+      '#cookieAccept',
       '#onetrust-accept-btn-handler',
       '#accept-cookies',
       '#acceptCookies',
@@ -311,8 +312,8 @@ async function dismissCookieBanners(page: Page): Promise<void> {
 
     // Text patterns to match inside buttons/links (case-insensitive)
     const textPatterns = [
-      /^aceptar\s*(todas?)?$/i,
-      /^accept\s*(all)?$/i,
+      /^aceptar\s*(todas?|cookies?)?$/i,
+      /^accept\s*(all|cookies?)?$/i,
       /^acepto$/i,
       /^i agree$/i,
       /^agree$/i,
