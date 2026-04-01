@@ -323,7 +323,10 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
               })
             );
 
-            if (!thumbnailSentRef.current && result.screenshotPath && !result.error) {
+            const isHomePage = (() => {
+              try { const u = new URL(url); return u.pathname === "/" || u.pathname === ""; } catch { return false; }
+            })();
+            if (result.screenshotPath && !result.error && (!thumbnailSentRef.current || isHomePage)) {
               thumbnailSentRef.current = true;
               fetch(`/api/projects/${projectId}`, {
                 method: "PATCH",
@@ -609,8 +612,11 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
               })
             );
 
-            // Save thumbnail from first successful result
-            if (!thumbnailSentRef.current && result.screenshotPath && !result.error) {
+            // Save thumbnail: prefer home/index page, fall back to first successful result
+            const isHomePage = (() => {
+              try { const u = new URL(url); return u.pathname === "/" || u.pathname === ""; } catch { return false; }
+            })();
+            if (result.screenshotPath && !result.error && (!thumbnailSentRef.current || isHomePage)) {
               thumbnailSentRef.current = true;
               fetch(`/api/projects/${projectId}`, {
                 method: "PATCH",
