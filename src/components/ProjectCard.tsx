@@ -9,6 +9,7 @@ interface ProjectCardProps {
   onDelete: (id: string) => void;
   onToggleFavorite?: (id: string, isFavorite: boolean) => void;
   onToggleArchive?: (id: string, isArchived: boolean) => void;
+  onThumbnailChange?: (id: string, thumbnailUrl: string) => void;
 }
 
 const GRADIENT_COLORS = [
@@ -33,9 +34,33 @@ function formatDate(iso: string) {
   });
 }
 
-export default function ProjectCard({ project, onDelete, onToggleFavorite, onToggleArchive }: ProjectCardProps) {
+export default function ProjectCard({ project, onDelete, onToggleFavorite, onToggleArchive, onThumbnailChange }: ProjectCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [localThumbnail, setLocalThumbnail] = useState(project.thumbnailUrl);
+
+  async function handleThumbnailDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/projects/${project.id}/thumbnail`, { method: "POST", body: formData });
+      const data = await res.json();
+      if (data.thumbnailUrl) {
+        setLocalThumbnail(data.thumbnailUrl);
+        onThumbnailChange?.(project.id, data.thumbnailUrl);
+      }
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function handleDelete(e: React.MouseEvent) {
     e.preventDefault();
@@ -82,10 +107,26 @@ export default function ProjectCard({ project, onDelete, onToggleFavorite, onTog
         {/* Thumbnail */}
         <div
           className={`relative h-40 rounded-t-[20px] overflow-hidden bg-gradient-to-br ${getGradient(project.id)}`}
+          style={{ transition: "box-shadow 0.15s" }}
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+          onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+          onDragLeave={(e) => { e.stopPropagation(); setDragOver(false); }}
+          onDrop={handleThumbnailDrop}
         >
-          {project.thumbnailUrl ? (
+          {dragOver && (
+            <div style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, background: "rgba(90,59,221,0.55)", pointerEvents: "none", backdropFilter: "blur(2px)" }}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Suelta para cambiar portada</span>
+            </div>
+          )}
+          {uploading && (
+            <div style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.45)" }}>
+              <div style={{ width: 24, height: 24, border: "3px solid #fff", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+            </div>
+          )}
+          {localThumbnail ? (
             <img
-              src={project.thumbnailUrl}
+              src={localThumbnail}
               alt={project.name}
               className="w-full h-full object-cover object-top"
             />

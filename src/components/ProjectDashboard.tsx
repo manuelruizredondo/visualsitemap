@@ -31,6 +31,12 @@ export default function ProjectDashboard({ initialProjects, userEmail }: Project
     );
   }
 
+  function handleThumbnailChange(id: string, thumbnailUrl: string) {
+    setProjects((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, thumbnailUrl } : p))
+    );
+  }
+
   const filteredProjects = projects.filter((p) => {
     if (view === "favorites") return p.isFavorite && !p.isArchived;
     if (view === "archived") return p.isArchived;
@@ -119,6 +125,7 @@ export default function ProjectDashboard({ initialProjects, userEmail }: Project
               onDelete={handleDelete}
               onToggleFavorite={handleToggleFavorite}
               onToggleArchive={handleToggleArchive}
+              onThumbnailChange={handleThumbnailChange}
             />
           ))}
           {/* New project card */}
