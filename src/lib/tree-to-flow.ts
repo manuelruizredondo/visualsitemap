@@ -17,6 +17,7 @@ export interface PageNodeData {
   seoScore?: number;
   a11yScore?: number;
   isLanguage?: boolean;
+  verticalFromDepth?: number;
   tags?: { id: string; name: string; color: string }[];
   availableTags?: { id: string; name: string; color: string }[];
   selectedTagIds?: string[];
@@ -26,7 +27,7 @@ export interface PageNodeData {
   [key: string]: unknown;
 }
 
-export function treeToFlow(tree: TreeNode): {
+export function treeToFlow(tree: TreeNode, verticalFromDepth: number = 2): {
   nodes: Node<PageNodeData>[];
   edges: Edge[];
 } {
@@ -46,17 +47,20 @@ export function treeToFlow(tree: TreeNode): {
         depth: node.depth,
         isVirtual: !node.url && !node.isLanguage,
         isLanguage: node.isLanguage,
+        verticalFromDepth,
       },
     });
 
     if (parentId) {
-      // depth >= 3 → bracket (smoothstep crea ángulo recto: baja → gira a la derecha)
-      // depth < 3  → bezier (curva suave)
+      // El hijo es bracket si su padre es vertical (parent.depth >= verticalFromDepth)
+      // Como child.depth = parent.depth + 1, el hijo es bracket cuando depth >= verticalFromDepth + 1
+      const isBracketChild = node.depth >= verticalFromDepth + 1;
       edges.push({
         id: `edge-${parentId}-${node.id}`,
         source: parentId,
         target: node.id,
-        type: node.depth >= 3 ? "smoothstep" : "bezier",
+        targetHandle: isBracketChild ? "target-left" : "target-top",
+        type: isBracketChild ? "smoothstep" : "bezier",
         style: { stroke: "#c4c7c8", strokeWidth: 2 },
       });
     }

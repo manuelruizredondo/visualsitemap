@@ -143,7 +143,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
         const proj: Project = data.project;
         setProject(proj);
 
-        const { nodes: treeNodes, edges: treeEdges } = treeToFlow(proj.tree);
+        const { nodes: treeNodes, edges: treeEdges } = treeToFlow(proj.tree, verticalFromDepth);
         const { nodes: customNodes, edges: customEdges } = customNodesToFlow(proj.customNodes ?? []);
 
         // Enrich tree nodes with pageMeta data and tags
@@ -345,9 +345,25 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
         const tgtCustom = nodes.find((n) => n.id === e.target)?.data.isCustom;
         return srcCustom || tgtCustom;
       });
-      const { nodes: layouted, edges: layoutedEdges } = getLayoutedElements(treeNodes, treeEdges, dir, verticalFromDepth);
+      // Update verticalFromDepth in node data so PageNode handles render correctly
+      const updatedTreeNodes = treeNodes.map((n) => ({
+        ...n,
+        data: { ...n.data, verticalFromDepth },
+      }));
+      // Update edge types and targetHandle based on verticalFromDepth
+      const updatedTreeEdges = treeEdges.map((e) => {
+        const targetNode = nodes.find((n) => n.id === e.target);
+        const targetDepth = (targetNode?.data as { depth?: number })?.depth ?? 0;
+        const isBracketChild = targetDepth >= verticalFromDepth + 1;
+        return {
+          ...e,
+          type: isBracketChild ? "smoothstep" : "bezier",
+          targetHandle: isBracketChild ? "target-left" : "target-top",
+        };
+      });
+      const { nodes: layouted, edges: layoutedEdges } = getLayoutedElements(updatedTreeNodes, updatedTreeEdges, dir, verticalFromDepth);
       setNodes([...layouted, ...customNodes]);
-      const allEdges = [...layoutedEdges, ...customEdges].map((e) => ({ ...e, type: eStyle }));
+      const allEdges = [...layoutedEdges, ...customEdges].map((e) => ({ ...e, type: eStyle === "cleanStep" ? "smoothstep" : e.type }));
       setEdges(allEdges);
       setTimeout(() => fitView({ padding: 0.2 }), 50);
     },

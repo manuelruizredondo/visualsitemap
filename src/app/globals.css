@@ -97,6 +97,25 @@ input.auth-ec-input:focus-visible {
   background: var(--ec-on-surface-variant);
 }
 
+/* ── React Flow Nodes: allow handles to overflow ───────────────── */
+.react-flow__node {
+  overflow: visible !important;
+  z-index: auto !important;
+}
+
+/* Handle Left debe verse por encima de nodos adyacentes */
+.react-flow__handle[data-handlepos="left"] {
+  z-index: 10 !important;
+}
+
+/* ── Handle hover animation ────────────────────────────────────── */
+.react-flow .react-flow__handle {
+  transition: scale 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.react-flow .react-flow__handle:hover {
+  scale: 1.6;
+}
+
 /* ── React Flow Controls ────────────────────────────────────────── */
 .react-flow__controls {
   border-radius: 16px !important;

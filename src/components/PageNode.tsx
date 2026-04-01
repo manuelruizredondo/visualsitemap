@@ -206,8 +206,12 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
     }
   }, [editValue, displayTitle, onNameChange, nodeId, url, data.isCustom]);
 
-  // Bracket children (depth >= 3) reciben la conexión por la izquierda
-  const targetPos = depth >= 3 ? Position.Left : Position.Top;
+  // Bracket children reciben la conexión por la izquierda.
+  // Un hijo es bracket si su padre es vertical: parent.depth >= verticalFromDepth
+  // Como child.depth = parent.depth + 1 → child.depth >= verticalFromDepth + 1
+  const vfd = (data.verticalFromDepth ?? 2);
+  const isBracketChild = depth >= vfd + 1;
+  const targetPos = isBracketChild ? Position.Left : Position.Top;
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -234,7 +238,14 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
       <div className="flex flex-col items-center" style={{ width: 160, position: "relative" }}
         onContextMenu={handleContextMenu}
       >
-        <Handle type="target" position={targetPos} style={{ background: '#5a3bdd', width: 10, height: 10, border: 'none' }} />
+        <Handle id="target-top" type="target" position={Position.Top} style={{
+          background: '#5a3bdd', width: 10, height: 10, border: 'none',
+          ...(!isBracketChild ? {} : { opacity: 0, pointerEvents: 'none' as const }),
+        }} />
+        <Handle id="target-left" type="target" position={Position.Left} className="vs-handle" style={{
+          background: '#5a3bdd', width: 10, height: 10, border: 'none',
+          ...(isBracketChild ? {} : { opacity: 0, pointerEvents: 'none' as const }),
+        }} />
         <div className="flex items-center gap-2" style={{ background: '#5a3bdd', color: '#fff', padding: '8px 18px', borderRadius: 9999, boxShadow: 'var(--ec-shadow-ambient)' }}>
           <span className="text-sm">🌐</span>
           <span className="text-xs font-bold uppercase tracking-wider">{displayTitle}</span>
@@ -259,7 +270,14 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
       <div className="flex flex-col items-center" style={{ width: 140, position: "relative" }}
         onContextMenu={handleContextMenu}
       >
-        <Handle type="target" position={targetPos} style={{ background: 'var(--ec-surface-container-high)', width: 8, height: 8, border: 'none' }} />
+        <Handle id="target-top" type="target" position={Position.Top} style={{
+          background: 'var(--ec-surface-container-high)', width: 8, height: 8, border: 'none',
+          ...(!isBracketChild ? {} : { opacity: 0, pointerEvents: 'none' as const }),
+        }} />
+        <Handle id="target-left" type="target" position={Position.Left} className="vs-handle" style={{
+          background: 'var(--ec-surface-container-high)', width: 8, height: 8, border: 'none',
+          ...(isBracketChild ? {} : { opacity: 0, pointerEvents: 'none' as const }),
+        }} />
         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ec-on-surface)', textAlign: 'center', lineHeight: 1.3, textTransform: 'capitalize' }}>
           {displayTitle}
         </span>
@@ -298,7 +316,14 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
       }}
       onContextMenu={handleContextMenu}
     >
-      <Handle type="target" position={targetPos} style={{ background: 'var(--ec-primary-container)', width: 10, height: 10, border: 'none' }} />
+      <Handle id="target-top" type="target" position={Position.Top} style={{
+        background: 'var(--ec-primary-container)', width: 10, height: 10, border: 'none',
+        ...(!isBracketChild ? {} : { opacity: 0, pointerEvents: 'none' as const }),
+      }} />
+      <Handle id="target-left" type="target" position={Position.Left} className="vs-handle" style={{
+        background: 'var(--ec-primary-container)', width: 10, height: 10, border: 'none',
+        ...(isBracketChild ? {} : { opacity: 0, pointerEvents: 'none' as const }),
+      }} />
 
       <div style={{ borderRadius: 20, overflow: 'hidden' }}>
       {/* Page title */}
