@@ -250,6 +250,14 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
 
       for (let i = 0; i < urls.length; i++) {
         const url = urls[i];
+
+        // Mark this node as capturing
+        setNodes((prev) =>
+          prev.map((node) =>
+            node.data.url === url ? { ...node, data: { ...node.data, isCapturing: true } } : node
+          )
+        );
+
         try {
           const captureRes = await fetch(`/api/projects/${projectId}/recapture`, {
             method: "POST",
@@ -264,12 +272,13 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
 
             setNodes((prev) =>
               prev.map((node) => {
-                if (node.data.url === url && result.screenshotPath) {
+                if (node.data.url === url) {
                   return {
                     ...node,
                     data: {
                       ...node.data,
-                      screenshotUrl: result.screenshotPath,
+                      isCapturing: false,
+                      screenshotUrl: result.screenshotPath || node.data.screenshotUrl,
                       title: result.title || node.data.label,
                       hasError: !!result.error,
                     },
@@ -289,9 +298,19 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
             }
           } else {
             results.push({ url, screenshotPath: "", title: url, description: "", error: "Capture failed" });
+            setNodes((prev) =>
+              prev.map((node) =>
+                node.data.url === url ? { ...node, data: { ...node.data, isCapturing: false, hasError: true } } : node
+              )
+            );
           }
         } catch {
           results.push({ url, screenshotPath: "", title: url, description: "", error: "Network error" });
+          setNodes((prev) =>
+            prev.map((node) =>
+              node.data.url === url ? { ...node, data: { ...node.data, isCapturing: false, hasError: true } } : node
+            )
+          );
         }
 
         setScreenshotStatus({ jobId, status: "processing", total: urls.length, completed: i + 1, results });
@@ -490,6 +509,14 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
 
       for (let i = 0; i < urls.length; i++) {
         const url = urls[i];
+
+        // Mark this node as capturing
+        setNodes((prev) =>
+          prev.map((node) =>
+            node.data.url === url ? { ...node, data: { ...node.data, isCapturing: true } } : node
+          )
+        );
+
         try {
           const captureRes = await fetch(`/api/projects/${projectId}/recapture`, {
             method: "POST",
@@ -505,12 +532,13 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
             // Update node screenshot in real time
             setNodes((prev) =>
               prev.map((node) => {
-                if (node.data.url === url && result.screenshotPath) {
+                if (node.data.url === url) {
                   return {
                     ...node,
                     data: {
                       ...node.data,
-                      screenshotUrl: result.screenshotPath,
+                      isCapturing: false,
+                      screenshotUrl: result.screenshotPath || node.data.screenshotUrl,
                       title: result.title || node.data.label,
                       hasError: !!result.error,
                     },
@@ -531,9 +559,19 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
             }
           } else {
             results.push({ url, screenshotPath: "", title: url, description: "", error: "Capture failed" });
+            setNodes((prev) =>
+              prev.map((node) =>
+                node.data.url === url ? { ...node, data: { ...node.data, isCapturing: false, hasError: true } } : node
+              )
+            );
           }
         } catch {
           results.push({ url, screenshotPath: "", title: url, description: "", error: "Network error" });
+          setNodes((prev) =>
+            prev.map((node) =>
+              node.data.url === url ? { ...node, data: { ...node.data, isCapturing: false, hasError: true } } : node
+            )
+          );
         }
 
         // Update progress

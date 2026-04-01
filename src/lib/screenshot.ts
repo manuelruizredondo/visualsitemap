@@ -32,13 +32,16 @@ async function launchBrowser(): Promise<Browser> {
   return puppeteer.launch({
     args: [
       ...chromium.args,
-      "--single-process",        // Reduces memory; avoids multi-process crashes in Lambda
+      "--single-process",
       "--no-zygote",
+      "--disable-gpu",
+      "--disable-extensions",
+      "--disable-background-networking",
     ],
-    defaultViewport: chromium.defaultViewport,
+    defaultViewport: { width: 1280, height: 800 },
     executablePath: await chromium.executablePath(),
     headless: chromium.headless,
-    protocolTimeout: 30_000,   // 30 s — prevent protocol calls hanging forever
+    protocolTimeout: 20_000,
   });
 }
 
@@ -142,7 +145,7 @@ async function neutraliseSmoothScroll(page: Page): Promise<void> {
     window.scrollTo(0, 0);
   });
 
-  await new Promise((r) => setTimeout(r, 500));
+  await new Promise((r) => setTimeout(r, 200));
 }
 
 // ── SEO extraction ────────────────────────────────────────────────────────────
@@ -297,7 +300,13 @@ async function capturePageToStorage(
 
   try {
     await page.setViewport({ width: 1280, height: 800 });
-    await page.goto(toCaptureUrl(url), { waitUntil: "networkidle2", timeout: 30000 });
+
+    // Use domcontentloaded + short extra wait instead of networkidle2
+    // networkidle2 can hang 30s+ on pages with analytics/trackers
+    await page.goto(toCaptureUrl(url), { waitUntil: "domcontentloaded", timeout: 15000 });
+    // Brief wait for images and late-loading content
+    await new Promise((r) => setTimeout(r, 2000));
+
     await neutraliseSmoothScroll(page);
 
     const title = await page.title();
@@ -314,7 +323,7 @@ async function capturePageToStorage(
     const slug = urlToSlug(url);
     const filename = `${slug}.jpg`;
 
-    const rawBuffer = await page.screenshot({ type: "jpeg", quality: 75, fullPage: true });
+    const rawBuffer = await page.screenshot({ type: "jpeg", quality: 60, fullPage: true });
     const buffer = Buffer.isBuffer(rawBuffer) ? rawBuffer : Buffer.from(rawBuffer as Uint8Array);
     const publicUrl = await uploadToStorage(buffer, jobId, filename);
 

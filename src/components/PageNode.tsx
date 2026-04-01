@@ -158,7 +158,7 @@ function NodeContextMenu({
 
 /* ── Main node component ────────────────────────────────────────────── */
 function PageNodeComponent({ data }: { data: PageNodeData }) {
-  const { label, url, fullPath, screenshotUrl, customImageUrl, title, depth, isVirtual, isLanguage, hasError, seoScore, a11yScore, nodeId, onNameChange, onDelete, onToggleTag } = data;
+  const { label, url, fullPath, screenshotUrl, customImageUrl, title, depth, isVirtual, isLanguage, hasError, isCapturing, seoScore, a11yScore, nodeId, onNameChange, onDelete, onToggleTag } = data;
   const displayImage = customImageUrl || screenshotUrl;
   const displayTitle = title || label;
 
@@ -391,6 +391,13 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
               <div style={{ width: 40, height: 40, background: 'var(--ec-surface-container)', borderRadius: 12 }} />
               <div style={{ width: 64, height: 6, background: 'var(--ec-surface-container)', borderRadius: 9999 }} />
             </div>
+          </div>
+        )}
+
+        {/* Capturing overlay */}
+        {isCapturing && (
+          <div className="absolute inset-0 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)' }}>
+            <div className="w-7 h-7 border-3 border-white border-t-transparent rounded-full animate-spin" />
           </div>
         )}
 

@@ -13,6 +13,7 @@ export interface PageNodeData {
   isVirtual: boolean;
   isCustom?: boolean;
   hasError?: boolean;
+  isCapturing?: boolean;
   seoScore?: number;
   a11yScore?: number;
   isLanguage?: boolean;
