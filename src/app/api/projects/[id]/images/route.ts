@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import fs from "fs/promises";
-import path from "path";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { updateCustomImage } from "@/lib/projects";
 
 type Params = { params: Promise<{ id: string }> };
@@ -16,17 +15,23 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({ error: "file y key son obligatorios" }, { status: 400 });
     }
 
-    const dir = path.join(process.cwd(), "public", "custom-images", id);
-    await fs.mkdir(dir, { recursive: true });
-
-    const ext = file.name.split(".").pop() || "jpg";
-    const filename = `${key.replace(/[^a-z0-9_-]/gi, "_")}_${Date.now()}.${ext}`;
-    const filePath = path.join(dir, filename);
+    const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+    const safeKey = key.replace(/[^a-z0-9_-]/gi, "_");
+    const storagePath = `custom/${id}/${safeKey}_${Date.now()}.${ext}`;
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    await fs.writeFile(filePath, buffer);
+    const admin = createAdminClient();
 
-    const customImageUrl = `/custom-images/${id}/${filename}`;
+    const { error } = await admin.storage
+      .from("screenshots")
+      .upload(storagePath, buffer, { contentType: file.type || "image/jpeg", upsert: true });
+
+    if (error) throw new Error(`Storage upload failed: ${error.message}`);
+
+    const customImageUrl = admin.storage
+      .from("screenshots")
+      .getPublicUrl(storagePath).data.publicUrl;
+
     await updateCustomImage(id, key, customImageUrl);
 
     return NextResponse.json({ customImageUrl }, { status: 201 });
