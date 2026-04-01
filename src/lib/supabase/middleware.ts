@@ -63,8 +63,19 @@ export async function updateSession(request: NextRequest) {
     }
 
     return response;
-  } catch (err) {
-    console.error("[middleware] Supabase:", err);
+  } catch {
+    // Expected in Edge runtime when session cookies are stale/expired
+    // and the refresh token fetch fails. Safe to ignore — user will
+    // be treated as unauthenticated and redirected to /login if needed.
+    const publicPaths = ["/login", "/register", "/auth/callback"];
+    const isPublicPath = publicPaths.some((path) =>
+      request.nextUrl.pathname.startsWith(path)
+    );
+    if (!isPublicPath) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = "/login";
+      return NextResponse.redirect(redirectUrl);
+    }
     return NextResponse.next({ request });
   }
 }
