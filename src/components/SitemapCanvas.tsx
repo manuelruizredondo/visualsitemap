@@ -109,9 +109,10 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
   const [edgeStyle, setEdgeStyle] = useState<"bezier" | "cleanStep">("bezier");
   const drawerCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { fitView, screenToFlowPosition } = useReactFlow();
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const thumbnailSentRef = useRef(false);
   const pageMetaSentRef = useRef(false);
+  const pendingAutoCaptureRef = useRef<{ urls: string[]; jobId: string } | null>(null);
+  const autoCaptureTriggeredRef = useRef(false);
   const router = useRouter();
 
   // Expose projectId globally for PageNode inline editing
@@ -210,8 +211,14 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
         setLoading(false);
         setTimeout(() => fitView({ padding: 0.2 }), 100);
 
-        if (proj.screenshotJobId) {
-          startPolling(proj.screenshotJobId, proj.id);
+        // Auto-capture: if pages have no screenshots yet, start sequential capture
+        const urlsWithoutScreenshots = proj.urls
+          .filter((u: string) => u.startsWith("http"))
+          .filter((u: string) => !proj.pageMeta?.[u]?.screenshotPath);
+
+        if (urlsWithoutScreenshots.length > 0 && proj.screenshotJobId) {
+          // Trigger auto-capture after component is mounted
+          pendingAutoCaptureRef.current = { urls: urlsWithoutScreenshots, jobId: proj.screenshotJobId };
         }
       } catch {
         setNotFound(true);
@@ -220,101 +227,86 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
     }
     load();
     return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
       if (drawerCloseTimerRef.current) clearTimeout(drawerCloseTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  function startPolling(jobId: string, projId: string) {
-    // Always clear any existing interval before starting a new one
-    if (pollingRef.current) clearInterval(pollingRef.current);
+  // Auto-capture: sequentially capture pages that have no screenshots yet
+  useEffect(() => {
+    if (!pendingAutoCaptureRef.current || autoCaptureTriggeredRef.current) return;
+    autoCaptureTriggeredRef.current = true;
 
-    let consecutiveErrors = 0;
+    const { urls, jobId } = pendingAutoCaptureRef.current;
+    pendingAutoCaptureRef.current = null;
 
-    pollingRef.current = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/screenshots/${jobId}`);
-        if (!res.ok) {
-          // 404 = job lost (server restart). Stop polling to avoid infinite loop.
-          consecutiveErrors++;
-          if (consecutiveErrors >= 3) {
-            clearInterval(pollingRef.current!);
-            setScreenshotStatus(null);
-          }
-          return;
-        }
-        consecutiveErrors = 0;
-        const job: ScreenshotJob = await res.json();
-        setScreenshotStatus(job);
+    (async () => {
+      setScreenshotStatus({ jobId, status: "processing", total: urls.length, completed: 0, results: [] });
+      thumbnailSentRef.current = false;
+      pageMetaSentRef.current = false;
 
-        setNodes((prev) =>
-          prev.map((node) => {
-            const result = job.results.find((r) => r.url === node.data.url);
-            if (result) {
-              return {
-                ...node,
-                data: {
-                  ...node.data,
-                  screenshotUrl: result.screenshotPath || undefined,
-                  title: result.title || node.data.label,
-                  hasError: !!result.error,
-                },
-              };
-            }
-            return node;
-          })
-        );
+      const results: import("@/types").ScreenshotResult[] = [];
+      const pageMeta: Record<string, PageMeta> = {};
 
-        // Save thumbnail from first result
-        if (!thumbnailSentRef.current && job.results.length > 0) {
-          const first = job.results.find((r) => r.screenshotPath && !r.error);
-          if (first) {
-            thumbnailSentRef.current = true;
-            fetch(`/api/projects/${projId}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ thumbnailUrl: first.screenshotPath }),
-            }).catch(() => {});
-          }
-        }
-
-        // Save all page meta when job completes
-        if (job.status === "complete" && !pageMetaSentRef.current) {
-          pageMetaSentRef.current = true;
-          const pageMeta: Record<string, PageMeta> = {};
-          job.results.forEach((r) => {
-            if (r.screenshotPath && !r.error) {
-              pageMeta[r.url] = {
-                title: r.title,
-                description: r.description || "",
-                screenshotPath: r.screenshotPath,
-                seo: r.seo,
-                a11y: r.a11y,
-              };
-            }
+      for (let i = 0; i < urls.length; i++) {
+        const url = urls[i];
+        try {
+          const captureRes = await fetch(`/api/projects/${projectId}/recapture`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url }),
           });
-          if (Object.keys(pageMeta).length > 0) {
-            fetch(`/api/projects/${projId}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ pageMeta }),
-            }).then(() => {
-              setProject((prev) =>
-                prev ? { ...prev, pageMeta: { ...prev.pageMeta, ...pageMeta } } : prev
-              );
-            }).catch(() => {});
+
+          if (captureRes.ok) {
+            const { result, pageMeta: meta } = await captureRes.json();
+            results.push(result);
+            if (meta) pageMeta[url] = meta;
+
+            setNodes((prev) =>
+              prev.map((node) => {
+                if (node.data.url === url && result.screenshotPath) {
+                  return {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      screenshotUrl: result.screenshotPath,
+                      title: result.title || node.data.label,
+                      hasError: !!result.error,
+                    },
+                  };
+                }
+                return node;
+              })
+            );
+
+            if (!thumbnailSentRef.current && result.screenshotPath && !result.error) {
+              thumbnailSentRef.current = true;
+              fetch(`/api/projects/${projectId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ thumbnailUrl: result.screenshotPath }),
+              }).catch(() => {});
+            }
+          } else {
+            results.push({ url, screenshotPath: "", title: url, description: "", error: "Capture failed" });
           }
+        } catch {
+          results.push({ url, screenshotPath: "", title: url, description: "", error: "Network error" });
         }
 
-        if (job.status === "complete" || job.status === "error") {
-          if (pollingRef.current) clearInterval(pollingRef.current);
-        }
-      } catch {
-        // Retry on next poll
+        setScreenshotStatus({ jobId, status: "processing", total: urls.length, completed: i + 1, results });
       }
-    }, 2000);
-  }
+
+      setScreenshotStatus({ jobId, status: "complete", total: urls.length, completed: urls.length, results });
+
+      if (Object.keys(pageMeta).length > 0) {
+        setProject((prev) =>
+          prev ? { ...prev, pageMeta: { ...prev.pageMeta, ...pageMeta } } : prev
+        );
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   const onLayout = useCallback(
     (dir: "TB" | "LR", overrideEdgeStyle?: "bezier" | "cleanStep") => {
@@ -473,30 +465,95 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
 
   const handleRecaptureAll = useCallback(async () => {
     if (screenshotStatus?.status === "processing") return; // already running
-    // Stop any existing polling before launching a new job
-    if (pollingRef.current) clearInterval(pollingRef.current);
     try {
+      // Step 1: Prepare project (get URLs, new jobId, clear drawings)
       const res = await fetch(`/api/projects/${projectId}/recapture-all`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
       if (!res.ok) return;
-      const data = await res.json();
-      const { jobId } = data as { jobId: string };
+      const { jobId, urls } = (await res.json()) as { jobId: string; urls: string[]; total: number };
 
-      // Reset thumbnails and polling refs
+      // Reset refs
       thumbnailSentRef.current = false;
       pageMetaSentRef.current = false;
 
       // Update project with new jobId
       setProject((prev) => prev ? { ...prev, screenshotJobId: jobId, pageDrawings: {} } : prev);
 
-      // Start polling
-      startPolling(jobId, projectId);
+      // Show progress overlay
+      setScreenshotStatus({ jobId, status: "processing", total: urls.length, completed: 0, results: [] });
+
+      // Step 2: Capture each URL one at a time via the single-recapture endpoint
+      const results: import("@/types").ScreenshotResult[] = [];
+      const pageMeta: Record<string, PageMeta> = {};
+
+      for (let i = 0; i < urls.length; i++) {
+        const url = urls[i];
+        try {
+          const captureRes = await fetch(`/api/projects/${projectId}/recapture`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url }),
+          });
+
+          if (captureRes.ok) {
+            const { result, pageMeta: meta } = await captureRes.json();
+            results.push(result);
+            if (meta) pageMeta[url] = meta;
+
+            // Update node screenshot in real time
+            setNodes((prev) =>
+              prev.map((node) => {
+                if (node.data.url === url && result.screenshotPath) {
+                  return {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      screenshotUrl: result.screenshotPath,
+                      title: result.title || node.data.label,
+                      hasError: !!result.error,
+                    },
+                  };
+                }
+                return node;
+              })
+            );
+
+            // Save thumbnail from first successful result
+            if (!thumbnailSentRef.current && result.screenshotPath && !result.error) {
+              thumbnailSentRef.current = true;
+              fetch(`/api/projects/${projectId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ thumbnailUrl: result.screenshotPath }),
+              }).catch(() => {});
+            }
+          } else {
+            results.push({ url, screenshotPath: "", title: url, description: "", error: "Capture failed" });
+          }
+        } catch {
+          results.push({ url, screenshotPath: "", title: url, description: "", error: "Network error" });
+        }
+
+        // Update progress
+        setScreenshotStatus({ jobId, status: "processing", total: urls.length, completed: i + 1, results });
+      }
+
+      // Step 3: Mark as complete
+      setScreenshotStatus({ jobId, status: "complete", total: urls.length, completed: urls.length, results });
+
+      // Update local project pageMeta
+      if (Object.keys(pageMeta).length > 0) {
+        setProject((prev) =>
+          prev ? { ...prev, pageMeta: { ...prev.pageMeta, ...pageMeta } } : prev
+        );
+      }
     } catch (err) {
       console.error("Recapture all error:", err);
+      setScreenshotStatus((prev) => prev ? { ...prev, status: "error" } : null);
     }
-  }, [projectId, screenshotStatus]);
+  }, [projectId, screenshotStatus, setNodes]);
 
   const handleExport = useCallback(async () => {
     try {

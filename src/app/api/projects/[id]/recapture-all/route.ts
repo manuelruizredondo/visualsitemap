@@ -2,13 +2,23 @@ import { NextResponse } from "next/server";
 import { getProject, saveProject } from "@/lib/projects";
 import { getUser } from "@/lib/supabase/auth";
 import { v4 as uuidv4 } from "uuid";
-import { after } from "next/server";
-import { createJob, processScreenshots, getJob } from "@/lib/screenshot";
 
-export const maxDuration = 300; // Allow up to 5 min for full-site recapture
+export const maxDuration = 10;
 
 type Params = { params: Promise<{ id: string }> };
 
+/**
+ * POST /api/projects/[id]/recapture-all
+ *
+ * Prepares the project for a full re-capture:
+ *   - Generates a new storage prefix (jobId)
+ *   - Clears saved drawings
+ *   - Returns the list of URLs so the **frontend** can call
+ *     /api/projects/[id]/recapture for each one sequentially.
+ *
+ * This avoids running a long background task that exceeds
+ * Vercel's serverless function timeout.
+ */
 export async function POST(req: Request, { params }: Params) {
   const { id } = await params;
   const user = await getUser();
@@ -27,7 +37,6 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   const jobId = uuidv4();
-  await createJob(jobId, urls);
 
   // Clear drawings (screenshots are changing) and save new jobId
   project.pageDrawings = {};
@@ -35,37 +44,5 @@ export async function POST(req: Request, { params }: Params) {
   project.updatedAt = new Date().toISOString();
   await saveProject(project);
 
-  // Process screenshots in the background, then update pageMeta when done
-  after(
-    processScreenshots(jobId, urls).then(async () => {
-      const job = await getJob(jobId);
-      if (!job || job.status !== "complete") return;
-
-      const freshProject = await getProject(id);
-      if (!freshProject) return;
-
-      for (const r of job.results) {
-        if (r.screenshotPath && !r.error) {
-          freshProject.pageMeta[r.url] = {
-            title: r.title,
-            description: r.description || "",
-            screenshotPath: r.screenshotPath,
-            seo: r.seo,
-            customImageUrl: freshProject.pageMeta[r.url]?.customImageUrl,
-          };
-        }
-      }
-
-      // Set thumbnail from first successful result
-      const firstGood = job.results.find((r) => r.screenshotPath && !r.error);
-      if (firstGood) {
-        freshProject.thumbnailUrl = firstGood.screenshotPath;
-      }
-
-      freshProject.updatedAt = new Date().toISOString();
-      await saveProject(freshProject);
-    })
-  );
-
-  return NextResponse.json({ jobId, total: urls.length });
+  return NextResponse.json({ jobId, urls, total: urls.length });
 }

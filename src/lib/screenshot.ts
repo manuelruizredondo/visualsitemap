@@ -8,7 +8,7 @@
  */
 
 import type { Browser, Page } from "puppeteer-core";
-import type { ScreenshotResult, ScreenshotJob, A11yData } from "@/types";
+import type { ScreenshotResult, A11yData } from "@/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 // ── Browser ───────────────────────────────────────────────────────────────────
@@ -59,63 +59,6 @@ async function uploadToStorage(
   if (error) throw new Error(`Storage upload failed: ${error.message}`);
 
   return admin.storage.from("screenshots").getPublicUrl(storagePath).data.publicUrl;
-}
-
-// ── Job management (Supabase DB) ──────────────────────────────────────────────
-
-export async function createJob(jobId: string, urls: string[]): Promise<ScreenshotJob> {
-  const admin = createAdminClient();
-  const job: ScreenshotJob = {
-    jobId,
-    status: "processing",
-    total: urls.length,
-    completed: 0,
-    results: [],
-  };
-
-  const { error } = await admin.from("screenshot_jobs").upsert({
-    job_id: jobId,
-    status: "processing",
-    total: urls.length,
-    completed: 0,
-    results: [],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  });
-
-  if (error) console.error("createJob DB error:", error.message);
-
-  return job;
-}
-
-export async function getJob(jobId: string): Promise<ScreenshotJob | undefined> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("screenshot_jobs")
-    .select("*")
-    .eq("job_id", jobId)
-    .single();
-
-  if (error || !data) return undefined;
-
-  return {
-    jobId: data.job_id as string,
-    status: data.status as ScreenshotJob["status"],
-    total: data.total as number,
-    completed: data.completed as number,
-    results: (data.results as ScreenshotResult[]) ?? [],
-  };
-}
-
-async function updateJobProgress(
-  jobId: string,
-  patch: Partial<{ status: ScreenshotJob["status"]; completed: number; results: ScreenshotResult[] }>
-): Promise<void> {
-  const admin = createAdminClient();
-  await admin
-    .from("screenshot_jobs")
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq("job_id", jobId);
 }
 
 // ── URL helpers ───────────────────────────────────────────────────────────────
@@ -415,41 +358,3 @@ export async function processSingleScreenshot(
   }
 }
 
-/** Process all URLs for a job, persisting progress to Supabase after each page.
- *
- * Each URL gets its own fresh browser instance to avoid the "Target.createTarget
- * timed out" crash that occurs when reusing a single Chromium process across
- * multiple tabs in a serverless / Lambda environment.
- */
-export async function processScreenshots(jobId: string, urls: string[]): Promise<void> {
-  const results: ScreenshotResult[] = [];
-  let completed = 0;
-
-  for (const url of urls) {
-    let browser: Browser | null = null;
-    try {
-      browser = await launchBrowser();
-      const page = await browser.newPage();
-      const result = await capturePageToStorage(page, url, jobId);
-      await page.close();
-      results.push(result);
-    } catch (err) {
-      results.push({
-        url,
-        screenshotPath: "",
-        title: url,
-        description: "",
-        error: err instanceof Error ? err.message : "Error desconocido",
-      });
-    } finally {
-      // Always close the browser before moving to the next URL
-      if (browser) await browser.close().catch(() => {});
-    }
-
-    completed++;
-    // Persist progress after every page so polling always sees fresh data
-    await updateJobProgress(jobId, { completed, results });
-  }
-
-  await updateJobProgress(jobId, { status: "complete", completed, results });
-}

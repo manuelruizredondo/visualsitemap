@@ -1,21 +1,15 @@
 import { NextResponse } from "next/server";
-import { getJob } from "@/lib/screenshot";
 
-export const maxDuration = 10; // Job status reads are fast
-
-export async function GET(
-  _request: Request,
-  { params }: { params: Promise<{ jobId: string }> }
-) {
-  const { jobId } = await params;
-  const job = await getJob(jobId);
-
-  if (!job) {
-    return NextResponse.json(
-      { error: "Job no encontrado" },
-      { status: 404 }
-    );
-  }
-
-  return NextResponse.json(job);
+/**
+ * GET /api/screenshots/[jobId]
+ *
+ * Deprecated: job polling is no longer used.
+ * Screenshots are now captured sequentially from the frontend
+ * via /api/projects/[id]/recapture (one URL at a time).
+ */
+export async function GET() {
+  return NextResponse.json(
+    { error: "Job polling endpoint is deprecated." },
+    { status: 410 }
+  );
 }

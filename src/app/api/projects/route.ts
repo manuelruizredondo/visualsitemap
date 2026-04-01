@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
-import { after } from "next/server";
 import { listProjects, saveProject } from "@/lib/projects";
 import { parseSitemapXml, buildTree } from "@/lib/parse-sitemap";
 import { fetchSitemapFromUrl } from "@/lib/fetch-sitemap";
-import { createJob, processScreenshots } from "@/lib/screenshot";
 import { getUser } from "@/lib/supabase/auth";
 import type { Project } from "@/types";
 
@@ -89,16 +87,11 @@ export async function POST(request: Request) {
       userId: user?.id,
     };
 
-    await saveProject(project);
-
-    // Create screenshot job and fire processing in background
+    // Assign a storage prefix for screenshots (frontend will drive captures)
     const jobId = uuidv4();
-    await createJob(jobId, urls);
-
     project.screenshotJobId = jobId;
-    await saveProject(project);
 
-    after(processScreenshots(jobId, urls));
+    await saveProject(project);
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { tree: _, ...meta } = project;
