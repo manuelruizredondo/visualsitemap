@@ -1199,20 +1199,26 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
                   {/* Vertical from depth */}
                   <div style={{ padding: "10px 16px 6px" }}>
                     <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--ec-on-surface-variant)", marginBottom: 8 }}>Vertical desde nivel</p>
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="range"
-                        min={1}
-                        max={6}
-                        value={verticalFromDepth}
-                        onChange={(e) => {
-                          const val = Number(e.target.value);
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <button
+                        onClick={() => {
+                          const val = Math.max(1, verticalFromDepth - 1);
                           setVerticalFromDepth(val);
                           saveSettings({ verticalFromDepth: val });
                         }}
-                        style={{ flex: 1, accentColor: "var(--ec-secondary)" }}
-                      />
-                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ec-on-surface)", minWidth: 20, textAlign: "center" }}>{verticalFromDepth}</span>
+                        disabled={verticalFromDepth <= 1}
+                        style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid var(--ec-outline-variant)", background: "var(--ec-surface-container-low)", color: verticalFromDepth <= 1 ? "var(--ec-outline-variant)" : "var(--ec-on-surface)", cursor: verticalFromDepth <= 1 ? "default" : "pointer", fontSize: 16, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }}
+                      >−</button>
+                      <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: "var(--ec-on-surface)", textAlign: "center" }}>{verticalFromDepth}</span>
+                      <button
+                        onClick={() => {
+                          const val = Math.min(6, verticalFromDepth + 1);
+                          setVerticalFromDepth(val);
+                          saveSettings({ verticalFromDepth: val });
+                        }}
+                        disabled={verticalFromDepth >= 6}
+                        style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid var(--ec-outline-variant)", background: "var(--ec-surface-container-low)", color: verticalFromDepth >= 6 ? "var(--ec-outline-variant)" : "var(--ec-on-surface)", cursor: verticalFromDepth >= 6 ? "default" : "pointer", fontSize: 16, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }}
+                      >+</button>
                     </div>
                     <p style={{ fontSize: 10, color: "var(--ec-on-surface-variant)", marginTop: 4 }}>
                       Los hijos a partir de este nivel se apilan en vertical
