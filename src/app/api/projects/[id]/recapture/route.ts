@@ -3,6 +3,8 @@ import { getProject, saveProject } from "@/lib/projects";
 import { getUser } from "@/lib/supabase/auth";
 import { processSingleScreenshot } from "@/lib/screenshot";
 
+export const maxDuration = 60; // Single-page capture should finish within 1 min
+
 type Params = { params: Promise<{ id: string }> };
 
 export async function POST(req: Request, { params }: Params) {
@@ -25,11 +27,10 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   try {
-    // Use existing screenshotJobId directory, or create a new one
+    // Use existing screenshotJobId as the storage prefix, or fall back to project id
     const jobDir = project.screenshotJobId || project.id;
     const result = await processSingleScreenshot(jobDir, url);
 
-    // Update pageMeta with new screenshot data
     if (!project.pageMeta) project.pageMeta = {};
     const existing = project.pageMeta[url] ?? { title: "", description: "", screenshotPath: "" };
 

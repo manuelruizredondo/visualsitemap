@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
+import { after } from "next/server";
 import { createJob, processScreenshots } from "@/lib/screenshot";
+
+export const maxDuration = 300; // Allow up to 5 min for screenshot processing
 
 export async function POST(request: Request) {
   try {
@@ -14,10 +17,10 @@ export async function POST(request: Request) {
     }
 
     const jobId = uuidv4();
-    createJob(jobId, urls);
+    await createJob(jobId, urls);
 
-    // Start processing in background (don't await)
-    processScreenshots(jobId, urls);
+    // Process screenshots in the background after sending the response
+    after(processScreenshots(jobId, urls));
 
     return NextResponse.json({ jobId });
   } catch (err) {

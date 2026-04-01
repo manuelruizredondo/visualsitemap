@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
+import { after } from "next/server";
 import { listProjects, saveProject } from "@/lib/projects";
 import { parseSitemapXml, buildTree } from "@/lib/parse-sitemap";
 import { fetchSitemapFromUrl } from "@/lib/fetch-sitemap";
 import { createJob, processScreenshots } from "@/lib/screenshot";
 import { getUser } from "@/lib/supabase/auth";
 import type { Project } from "@/types";
+
+export const maxDuration = 60;
 
 const MAX_URLS = 200;
 
@@ -65,7 +68,7 @@ export async function POST(request: Request) {
     let domain = name;
     try {
       domain = new URL(urls[0]).host;
-    } catch {}
+    } catch { /* keep name as domain */ }
 
     const user = await getUser();
 
@@ -88,13 +91,14 @@ export async function POST(request: Request) {
 
     await saveProject(project);
 
-    // Start screenshot job
+    // Create screenshot job and fire processing in background
     const jobId = uuidv4();
-    createJob(jobId, urls);
-    processScreenshots(jobId, urls); // fire and forget
+    await createJob(jobId, urls);
 
     project.screenshotJobId = jobId;
     await saveProject(project);
+
+    after(processScreenshots(jobId, urls));
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { tree: _, ...meta } = project;

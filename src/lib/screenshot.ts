@@ -1,48 +1,65 @@
-import puppeteer, { type Browser, type Page } from "puppeteer";
-import path from "path";
-import fs from "fs/promises";
+/**
+ * screenshot.ts — Vercel-compatible screenshot engine
+ *
+ * Production:  @sparticuz/chromium + puppeteer-core, uploads to Supabase Storage,
+ *              job state persisted in the `screenshot_jobs` Supabase table.
+ *
+ * Development: falls back to the full `puppeteer` devDependency (local Chrome).
+ */
+
+import type { Browser, Page } from "puppeteer-core";
 import type { ScreenshotResult, ScreenshotJob, A11yData } from "@/types";
+import { createAdminClient } from "@/lib/supabase/admin";
 
-/** Launch Puppeteer with a clear error when Chrome is missing. */
+// ── Browser ───────────────────────────────────────────────────────────────────
+
 async function launchBrowser(): Promise<Browser> {
-  try {
-    return await puppeteer.launch({
+  if (process.env.NODE_ENV === "development") {
+    // Local dev: use full puppeteer (Chrome managed by puppeteer)
+    const { default: puppeteer } = await import("puppeteer" as string) as {
+      default: { launch: (opts: object) => Promise<Browser> };
+    };
+    return puppeteer.launch({
       headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-web-security",
-      ],
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
     });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (
-      msg.includes("Could not find Chrome") ||
-      msg.includes("Could not find Chromium")
-    ) {
-      throw new Error(
-        "Chrome no está instalado para Puppeteer. Ejecuta: npx puppeteer browsers install chrome"
-      );
-    }
-    throw err;
   }
+
+  // Production (Vercel / Lambda): use @sparticuz/chromium + puppeteer-core
+  const { default: chromium } = await import("@sparticuz/chromium");
+  const { default: puppeteer } = await import("puppeteer-core");
+
+  return puppeteer.launch({
+    args: chromium.args,
+    defaultViewport: chromium.defaultViewport,
+    executablePath: await chromium.executablePath(),
+    headless: chromium.headless,
+  });
 }
 
-// In-memory store for screenshot jobs (attached to globalThis to survive HMR in dev)
-const globalJobs = globalThis as unknown as {
-  __screenshotJobs?: Map<string, ScreenshotJob>;
-};
-if (!globalJobs.__screenshotJobs) {
-  globalJobs.__screenshotJobs = new Map<string, ScreenshotJob>();
-}
-const jobs = globalJobs.__screenshotJobs;
+// ── Supabase Storage upload ───────────────────────────────────────────────────
 
-export function getJob(jobId: string): ScreenshotJob | undefined {
-  return jobs.get(jobId);
+async function uploadToStorage(
+  buffer: Buffer,
+  jobId: string,
+  filename: string
+): Promise<string> {
+  const admin = createAdminClient();
+  const storagePath = `${jobId}/${filename}`;
+
+  const { error } = await admin.storage
+    .from("screenshots")
+    .upload(storagePath, buffer, { contentType: "image/jpeg", upsert: true });
+
+  if (error) throw new Error(`Storage upload failed: ${error.message}`);
+
+  return admin.storage.from("screenshots").getPublicUrl(storagePath).data.publicUrl;
 }
 
-export function createJob(jobId: string, urls: string[]): ScreenshotJob {
+// ── Job management (Supabase DB) ──────────────────────────────────────────────
+
+export async function createJob(jobId: string, urls: string[]): Promise<ScreenshotJob> {
+  const admin = createAdminClient();
   const job: ScreenshotJob = {
     jobId,
     status: "processing",
@@ -50,9 +67,53 @@ export function createJob(jobId: string, urls: string[]): ScreenshotJob {
     completed: 0,
     results: [],
   };
-  jobs.set(jobId, job);
+
+  const { error } = await admin.from("screenshot_jobs").upsert({
+    job_id: jobId,
+    status: "processing",
+    total: urls.length,
+    completed: 0,
+    results: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+
+  if (error) console.error("createJob DB error:", error.message);
+
   return job;
 }
+
+export async function getJob(jobId: string): Promise<ScreenshotJob | undefined> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("screenshot_jobs")
+    .select("*")
+    .eq("job_id", jobId)
+    .single();
+
+  if (error || !data) return undefined;
+
+  return {
+    jobId: data.job_id as string,
+    status: data.status as ScreenshotJob["status"],
+    total: data.total as number,
+    completed: data.completed as number,
+    results: (data.results as ScreenshotResult[]) ?? [],
+  };
+}
+
+async function updateJobProgress(
+  jobId: string,
+  patch: Partial<{ status: ScreenshotJob["status"]; completed: number; results: ScreenshotResult[] }>
+): Promise<void> {
+  const admin = createAdminClient();
+  await admin
+    .from("screenshot_jobs")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("job_id", jobId);
+}
+
+// ── URL helpers ───────────────────────────────────────────────────────────────
 
 function urlToSlug(url: string): string {
   try {
@@ -68,173 +129,119 @@ function urlToSlug(url: string): string {
   }
 }
 
-/**
- * Neutralise smooth-scroll libraries (Lenis, Locomotive Scroll) so Puppeteer
- * can take a proper fullPage screenshot.
- *
- * The key problem: these libraries set `overflow: hidden` on <html>/<body>
- * and translate content via CSS transforms, which prevents Puppeteer's
- * `fullPage: true` from seeing the real document height.
- *
- * Strategy: destroy/disable the library, remove its classes, reset transforms,
- * and restore native overflow — then let Puppeteer handle the rest.
- */
+function toCaptureUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    u.searchParams.set("capture", "1");
+    return u.toString();
+  } catch {
+    return url + (url.includes("?") ? "&" : "?") + "capture=1";
+  }
+}
+
+// ── Smooth-scroll neutraliser ─────────────────────────────────────────────────
+
 async function neutraliseSmoothScroll(page: Page): Promise<void> {
   await page.evaluate(() => {
-    // ── Lenis ───────────────────────────────────────────────────────
-    // 1. Try to destroy the Lenis instance first (stops rAF loop)
     try {
       const win = window as unknown as Record<string, unknown>;
-      const candidates = [
-        win.lenis,
-        win.__lenis,
-        win.lenisInstance,
-        win.scroll,
-        win.smoother,
-      ];
-      for (const inst of candidates) {
-        if (inst && typeof (inst as any).destroy === "function") {
-          (inst as any).destroy();
+      for (const inst of [win.lenis, win.__lenis, win.lenisInstance, win.scroll, win.smoother]) {
+        if (inst && typeof (inst as { destroy?: () => void }).destroy === "function") {
+          (inst as { destroy: () => void }).destroy();
         }
       }
-    } catch {
-      // No global Lenis instance found — that's fine
+    } catch { /* no lenis instance */ }
+
+    ["lenis", "lenis-smooth", "lenis-scrolling", "lenis-stopped"].forEach((cls) => {
+      document.documentElement.classList.remove(cls);
+      document.body.classList.remove(cls);
+    });
+
+    const lenisContent =
+      document.querySelector("[data-lenis-content]") ||
+      document.querySelector(".lenis-content") ||
+      document.querySelector("[data-lenis-wrapper] > *");
+    if (lenisContent) {
+      (lenisContent as HTMLElement).style.cssText += ";transform:none;will-change:auto";
+    }
+    const lenisWrapper =
+      document.querySelector("[data-lenis-wrapper]") ||
+      document.querySelector(".lenis-wrapper");
+    if (lenisWrapper) {
+      (lenisWrapper as HTMLElement).style.cssText += ";overflow:visible;height:auto";
     }
 
-    // 2. Remove Lenis classes
-    ["lenis", "lenis-smooth", "lenis-scrolling", "lenis-stopped"].forEach(
+    ["has-scroll-smooth", "has-scroll-init", "has-scroll-scrolling", "has-scroll-dragging"].forEach(
       (cls) => {
         document.documentElement.classList.remove(cls);
         document.body.classList.remove(cls);
       }
     );
 
-    // 3. Reset Lenis wrapper/content transforms
-    const lenisContent =
-      document.querySelector("[data-lenis-content]") ||
-      document.querySelector(".lenis-content") ||
-      document.querySelector("[data-lenis-wrapper] > *");
-    if (lenisContent) {
-      const el = lenisContent as HTMLElement;
-      el.style.transform = "none";
-      el.style.webkitTransform = "none";
-      el.style.willChange = "auto";
-    }
-    const lenisWrapper =
-      document.querySelector("[data-lenis-wrapper]") ||
-      document.querySelector(".lenis-wrapper");
-    if (lenisWrapper) {
-      const el = lenisWrapper as HTMLElement;
-      el.style.overflow = "visible";
-      el.style.height = "auto";
-    }
-
-    // ── Locomotive Scroll ───────────────────────────────────────────
-    [
-      "has-scroll-smooth",
-      "has-scroll-init",
-      "has-scroll-scrolling",
-      "has-scroll-dragging",
-    ].forEach((cls) => {
-      document.documentElement.classList.remove(cls);
-      document.body.classList.remove(cls);
-    });
-
     const locoContent =
       document.querySelector("[data-scroll-content]") ||
       document.querySelector("[data-scroll-container] > *");
     if (locoContent) {
-      const el = locoContent as HTMLElement;
-      el.style.transform = "none";
-      el.style.webkitTransform = "none";
-      el.style.willChange = "auto";
+      (locoContent as HTMLElement).style.cssText += ";transform:none;will-change:auto";
     }
     const locoContainer = document.querySelector("[data-scroll-container]");
     if (locoContainer) {
       (locoContainer as HTMLElement).style.overflow = "visible";
     }
 
-    // ── Generic: ensure html & body allow full-height rendering ─────
     document.documentElement.style.overflow = "visible";
     document.body.style.overflow = "visible";
-
-    // Scroll back to top so fullPage captures from the beginning
     window.scrollTo(0, 0);
   });
 
-  // Let the browser reflow
   await new Promise((r) => setTimeout(r, 500));
 }
 
-/** Extract SEO data from the current page */
+// ── SEO extraction ────────────────────────────────────────────────────────────
+
 async function extractSeoData(page: Page) {
   return page.evaluate(() => {
-    const h1s = Array.from(document.querySelectorAll("h1")).map(
-      (el) => el.textContent?.trim() || ""
-    );
+    const h1s = Array.from(document.querySelectorAll("h1")).map((el) => el.textContent?.trim() || "");
     const h2Count = document.querySelectorAll("h2").length;
     const h3Count = document.querySelectorAll("h3").length;
-
     const ogTitle = document.querySelector('meta[property="og:title"]');
     const ogDesc = document.querySelector('meta[property="og:description"]');
     const ogImage = document.querySelector('meta[property="og:image"]');
     const canonical = document.querySelector('link[rel="canonical"]');
-
     const images = document.querySelectorAll("img");
-    const imgWithoutAlt = Array.from(images).filter(
-      (img) => !img.alt || img.alt.trim() === ""
-    ).length;
-
+    const imgWithoutAlt = Array.from(images).filter((img) => !img.alt || img.alt.trim() === "").length;
     const links = document.querySelectorAll("a[href]");
-    let internalLinks = 0;
-    let externalLinks = 0;
+    let internalLinks = 0, externalLinks = 0;
     links.forEach((link) => {
       try {
         const href = (link as HTMLAnchorElement).href;
-        if (
-          href.startsWith(window.location.origin) ||
-          href.startsWith("/")
-        ) {
-          internalLinks++;
-        } else if (href.startsWith("http")) {
-          externalLinks++;
-        }
-      } catch {}
+        if (href.startsWith(window.location.origin) || href.startsWith("/")) internalLinks++;
+        else if (href.startsWith("http")) externalLinks++;
+      } catch { /* ignore */ }
     });
-
-    const bodyText = document.body?.innerText || "";
-    const wordCount = bodyText
-      .split(/\s+/)
-      .filter((w) => w.length > 0).length;
-
+    const wordCount = (document.body?.innerText || "").split(/\s+/).filter((w) => w.length > 0).length;
     return {
-      h1: h1s,
-      h2Count,
-      h3Count,
+      h1: h1s, h2Count, h3Count,
       hasOgTitle: !!ogTitle?.getAttribute("content"),
       hasOgDescription: !!ogDesc?.getAttribute("content"),
       hasOgImage: !!ogImage?.getAttribute("content"),
       hasCanonical: !!canonical,
       canonicalUrl: canonical?.getAttribute("href") || "",
-      imgWithoutAlt,
-      totalImages: images.length,
-      internalLinks,
-      externalLinks,
-      wordCount,
+      imgWithoutAlt, totalImages: images.length,
+      internalLinks, externalLinks, wordCount,
     };
   });
 }
 
-/** Extract accessibility data from the current page */
+// ── A11y extraction ───────────────────────────────────────────────────────────
+
 async function extractA11yData(page: Page): Promise<A11yData> {
   return page.evaluate(() => {
-    // ── Images without alt ──────────────────────────────────────────
     const images = document.querySelectorAll("img");
     const imgWithoutAlt = Array.from(images).filter(
       (img) => !img.hasAttribute("alt") || (img.alt.trim() === "" && !img.getAttribute("role"))
     ).length;
 
-    // ── Buttons without accessible label ────────────────────────────
     const buttons = document.querySelectorAll("button, [role='button']");
     const buttonsWithoutLabel = Array.from(buttons).filter((btn) => {
       const text = (btn.textContent || "").trim();
@@ -249,7 +256,6 @@ async function extractA11yData(page: Page): Promise<A11yData> {
       return true;
     }).length;
 
-    // ── Inputs without label ────────────────────────────────────────
     const inputs = document.querySelectorAll(
       "input:not([type='hidden']):not([type='submit']):not([type='button']), select, textarea"
     );
@@ -262,7 +268,6 @@ async function extractA11yData(page: Page): Promise<A11yData> {
       return true;
     }).length;
 
-    // ── Links without discernible text ──────────────────────────────
     const links = document.querySelectorAll("a[href]");
     const linksWithoutText = Array.from(links).filter((a) => {
       const text = (a.textContent || "").trim();
@@ -272,62 +277,36 @@ async function extractA11yData(page: Page): Promise<A11yData> {
       return !text && !ariaLabel && !title && !img;
     }).length;
 
-    // ── Missing lang attribute ──────────────────────────────────────
     const missingLang = !document.documentElement.getAttribute("lang");
 
-    // ── Heading order validation ────────────────────────────────────
     const headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6");
-    const headingSequence = Array.from(headings).map((h) =>
-      parseInt(h.tagName.charAt(1), 10)
-    );
+    const headingSequence = Array.from(headings).map((h) => parseInt(h.tagName.charAt(1), 10));
     let headingOrderValid = true;
     for (let i = 1; i < headingSequence.length; i++) {
-      if (headingSequence[i] > headingSequence[i - 1] + 1) {
-        headingOrderValid = false;
-        break;
-      }
+      if (headingSequence[i] > headingSequence[i - 1] + 1) { headingOrderValid = false; break; }
     }
 
-    // ── Approximate low-contrast text detection ─────────────────────
-    // Checks visible text elements for contrast against their background
     let lowContrastTexts = 0;
-    const textEls = document.querySelectorAll(
-      "p, span, a, li, td, th, label, h1, h2, h3, h4, h5, h6, button"
-    );
-    const sample = Array.from(textEls).slice(0, 200); // limit for performance
-    for (const el of sample) {
+    const textEls = document.querySelectorAll("p, span, a, li, td, th, label, h1, h2, h3, h4, h5, h6, button");
+    for (const el of Array.from(textEls).slice(0, 200)) {
       const style = getComputedStyle(el);
       if (style.display === "none" || style.visibility === "hidden") continue;
-      const fgRaw = style.color;
-      const bgRaw = style.backgroundColor;
-      // Quick luminance check on rgb values
-      const parseRgb = (s: string) => {
-        const m = s.match(/(\d+)/g);
-        return m ? m.map(Number) : null;
-      };
-      const fg = parseRgb(fgRaw);
-      const bg = parseRgb(bgRaw);
+      const parseRgb = (s: string) => { const m = s.match(/(\d+)/g); return m ? m.map(Number) : null; };
+      const fg = parseRgb(style.color);
+      const bg = parseRgb(style.backgroundColor);
       if (fg && bg && bg[3] !== 0) {
-        // Relative luminance (simplified sRGB)
         const lum = (rgb: number[]) => {
-          const [r, g, b] = rgb.map((c) => {
-            const s = c / 255;
-            return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-          });
+          const [r, g, b] = rgb.map((c) => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); });
           return 0.2126 * r + 0.7152 * g + 0.0722 * b;
         };
-        const l1 = lum(fg);
-        const l2 = lum(bg);
-        const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+        const ratio = (Math.max(lum(fg), lum(bg)) + 0.05) / (Math.min(lum(fg), lum(bg)) + 0.05);
         const fontSize = parseFloat(style.fontSize);
         const isBold = parseInt(style.fontWeight, 10) >= 700;
         const isLargeText = fontSize >= 24 || (fontSize >= 18.66 && isBold);
-        const minRatio = isLargeText ? 3 : 4.5;
-        if (ratio < minRatio) lowContrastTexts++;
+        if (ratio < (isLargeText ? 3 : 4.5)) lowContrastTexts++;
       }
     }
 
-    // ── Skip link ───────────────────────────────────────────────────
     const firstLinks = Array.from(document.querySelectorAll("a[href]")).slice(0, 5);
     const missingSkipLink = !firstLinks.some((a) => {
       const href = a.getAttribute("href") || "";
@@ -335,18 +314,9 @@ async function extractA11yData(page: Page): Promise<A11yData> {
       return href.startsWith("#") && (text.includes("skip") || text.includes("saltar") || text.includes("ir al contenido"));
     });
 
-    // ── Landmarks ───────────────────────────────────────────────────
-    const missingMainLandmark =
-      !document.querySelector("main") && !document.querySelector("[role='main']");
-    const missingNavLandmark =
-      !document.querySelector("nav") && !document.querySelector("[role='navigation']");
-
-    // ── Autoplaying media ───────────────────────────────────────────
-    const autoplaying = document.querySelectorAll(
-      "video[autoplay], audio[autoplay]"
-    ).length;
-
-    // ── Form autocomplete ───────────────────────────────────────────
+    const missingMainLandmark = !document.querySelector("main") && !document.querySelector("[role='main']");
+    const missingNavLandmark = !document.querySelector("nav") && !document.querySelector("[role='navigation']");
+    const autoplaying = document.querySelectorAll("video[autoplay], audio[autoplay]").length;
     const formFields = document.querySelectorAll(
       "input[type='text'], input[type='email'], input[type='tel'], input[type='password'], input[type='url'], input[type='search'], input:not([type])"
     );
@@ -355,78 +325,33 @@ async function extractA11yData(page: Page): Promise<A11yData> {
     ).length;
 
     return {
-      imgWithoutAlt,
-      totalImages: images.length,
-      buttonsWithoutLabel,
-      totalButtons: buttons.length,
-      inputsWithoutLabel,
-      totalInputs: inputs.length,
-      linksWithoutText,
-      totalLinks: links.length,
-      missingLang,
-      headingOrderValid,
-      headingSequence,
-      lowContrastTexts,
-      missingSkipLink,
-      missingMainLandmark,
-      missingNavLandmark,
-      autoplaying,
-      totalFormFields: formFields.length,
+      imgWithoutAlt, totalImages: images.length,
+      buttonsWithoutLabel, totalButtons: buttons.length,
+      inputsWithoutLabel, totalInputs: inputs.length,
+      linksWithoutText, totalLinks: links.length,
+      missingLang, headingOrderValid, headingSequence,
+      lowContrastTexts, missingSkipLink,
+      missingMainLandmark, missingNavLandmark,
+      autoplaying, totalFormFields: formFields.length,
       formFieldsWithoutAutocomplete,
     };
   });
 }
 
-/**
- * Append `capture=1` to a URL so the target site renders in "capture mode"
- * (all content visible, no scroll-dependent animations).
- */
-function toCaptureUrl(url: string): string {
-  try {
-    const u = new URL(url);
-    u.searchParams.set("capture", "1");
-    return u.toString();
-  } catch {
-    // If URL parsing fails, fall back to simple concatenation
-    return url + (url.includes("?") ? "&" : "?") + "capture=1";
-  }
-}
+// ── Core capture ──────────────────────────────────────────────────────────────
 
-/**
- * Capture a single page.
- *
- * Flow: navigate with ?capture=1 → neutralise smooth-scroll (fallback)
- *       → extract SEO → fullPage screenshot.
- *
- * The `capture=1` param tells the target site to render everything visible
- * without depending on scroll or viewport. The neutralise step is kept as
- * a safety net for sites that don't support this param.
- */
-async function capturePage(
+async function capturePageToStorage(
   page: Page,
   url: string,
-  screenshotDir: string,
-  dirName: string
+  jobId: string
 ): Promise<ScreenshotResult> {
-  const result: ScreenshotResult = {
-    url,
-    screenshotPath: "",
-    title: "",
-    description: "",
-  };
+  const result: ScreenshotResult = { url, screenshotPath: "", title: "", description: "" };
 
   try {
     await page.setViewport({ width: 1280, height: 800 });
-
-    // Navigate with capture mode enabled
-    const captureUrl = toCaptureUrl(url);
-    await page.goto(captureUrl, { waitUntil: "networkidle2", timeout: 30000 });
-
-    // Safety net: neutralise smooth-scroll libs in case the site
-    // doesn't fully support ?capture=1
+    await page.goto(toCaptureUrl(url), { waitUntil: "networkidle2", timeout: 30000 });
     await neutraliseSmoothScroll(page);
 
-    // Extract metadata & SEO
     const title = await page.title();
     const description = await page.evaluate(() => {
       const el =
@@ -434,29 +359,21 @@ async function capturePage(
         document.querySelector('meta[property="og:description"]');
       return el?.getAttribute("content") || "";
     });
+
     const seoData = await extractSeoData(page);
     const a11yData = await extractA11yData(page);
 
-    // Take the screenshot — fullPage handles height automatically
     const slug = urlToSlug(url);
     const filename = `${slug}.jpg`;
-    const filepath = path.join(screenshotDir, filename);
 
-    await page.screenshot({
-      path: filepath,
-      type: "jpeg",
-      quality: 75,
-      fullPage: true,
-    });
+    const rawBuffer = await page.screenshot({ type: "jpeg", quality: 75, fullPage: true });
+    const buffer = Buffer.isBuffer(rawBuffer) ? rawBuffer : Buffer.from(rawBuffer as Uint8Array);
+    const publicUrl = await uploadToStorage(buffer, jobId, filename);
 
-    result.screenshotPath = `/screenshots/${dirName}/${filename}`;
+    result.screenshotPath = publicUrl;
     result.title = title;
     result.description = description;
-    result.seo = {
-      titleLength: title.length,
-      descriptionLength: description.length,
-      ...seoData,
-    };
+    result.seo = { titleLength: title.length, descriptionLength: description.length, ...seoData };
     result.a11y = a11yData;
   } catch (err) {
     result.error = err instanceof Error ? err.message : "Error desconocido";
@@ -466,26 +383,18 @@ async function capturePage(
   return result;
 }
 
-/** Recapture a single URL and return the updated result */
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/** Recapture a single URL (used by /recapture route). */
 export async function processSingleScreenshot(
   jobDir: string,
   url: string
 ): Promise<ScreenshotResult> {
-  const screenshotDir = path.join(
-    process.cwd(),
-    "public",
-    "screenshots",
-    jobDir
-  );
-  await fs.mkdir(screenshotDir, { recursive: true });
-
   let browser: Browser | null = null;
-
   try {
     browser = await launchBrowser();
-
     const page = await browser.newPage();
-    const result = await capturePage(page, url, screenshotDir, jobDir);
+    const result = await capturePageToStorage(page, url, jobDir);
     await page.close();
     return result;
   } catch (err) {
@@ -497,26 +406,15 @@ export async function processSingleScreenshot(
       error: err instanceof Error ? err.message : "Error desconocido",
     };
   } finally {
-    if (browser) await browser.close();
+    if (browser) await browser.close().catch(() => {});
   }
 }
 
-export async function processScreenshots(
-  jobId: string,
-  urls: string[]
-): Promise<void> {
-  const job = jobs.get(jobId);
-  if (!job) return;
-
-  const screenshotDir = path.join(
-    process.cwd(),
-    "public",
-    "screenshots",
-    jobId
-  );
-  await fs.mkdir(screenshotDir, { recursive: true });
-
+/** Process all URLs for a job, persisting progress to Supabase after each page. */
+export async function processScreenshots(jobId: string, urls: string[]): Promise<void> {
   let browser: Browser | null = null;
+  const results: ScreenshotResult[] = [];
+  let completed = 0;
 
   try {
     browser = await launchBrowser();
@@ -524,11 +422,11 @@ export async function processScreenshots(
     for (const url of urls) {
       try {
         const page = await browser.newPage();
-        const result = await capturePage(page, url, screenshotDir, jobId);
+        const result = await capturePageToStorage(page, url, jobId);
         await page.close();
-        job.results.push(result);
+        results.push(result);
       } catch (err) {
-        job.results.push({
+        results.push({
           url,
           screenshotPath: "",
           title: url,
@@ -536,16 +434,17 @@ export async function processScreenshots(
           error: err instanceof Error ? err.message : "Error desconocido",
         });
       }
-      job.completed++;
+
+      completed++;
+      // Persist progress after every page so polling always sees fresh data
+      await updateJobProgress(jobId, { completed, results });
     }
 
-    job.status = "complete";
+    await updateJobProgress(jobId, { status: "complete", completed, results });
   } catch (err) {
-    job.status = "error";
+    await updateJobProgress(jobId, { status: "error" });
     console.error("Screenshot job error:", err);
   } finally {
-    if (browser) {
-      await browser.close();
-    }
+    if (browser) await browser.close().catch(() => {});
   }
 }
