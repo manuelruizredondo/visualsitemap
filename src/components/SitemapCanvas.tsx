@@ -232,7 +232,18 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
         setNodes([...layouted, ...enrichedCustomNodes]);
         setEdges([...layoutedEdges, ...customEdges]);
         setLoading(false);
-        setTimeout(() => fitView({ padding: 0.2 }), 100);
+        // Center on first two levels (root + direct children) for a meaningful initial view
+        setTimeout(() => {
+          const topNodes = layouted.filter((n) => {
+            const depth = (n.data as { depth?: number })?.depth ?? 0;
+            return depth <= 1;
+          });
+          if (topNodes.length > 0) {
+            fitView({ padding: 0.15, nodes: topNodes });
+          } else {
+            fitView({ padding: 0.2 });
+          }
+        }, 100);
 
         // Auto-capture: if pages have no screenshots yet, start sequential capture
         const urlsWithoutScreenshots = proj.urls
@@ -1302,7 +1313,6 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
         onConnectEnd={onConnectEnd}
         onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
-        fitView
         minZoom={0.05}
         maxZoom={2}
         defaultEdgeOptions={{ type: edgeStyle }}
