@@ -25,12 +25,14 @@ function rowToProject(row: Record<string, unknown>): Project {
     pageTags:         (row.page_tags as Project["pageTags"]) ?? {},
     pageNames:        (row.page_names as Project["pageNames"]) ?? {},
     pageDrawings:     (row.page_drawings as Project["pageDrawings"]) ?? {},
+    pageStates:       (row.page_states as Project["pageStates"]) ?? {},
     settings:         (row.settings as ProjectSettings) ?? {},
     thumbnailUrl:     row.thumbnail_url as string | undefined,
     screenshotJobId:  row.screenshot_job_id as string | undefined,
     isFavorite:       (row.is_favorite as boolean) ?? false,
     isArchived:       (row.is_archived as boolean) ?? false,
     userId:           row.user_id as string | undefined,
+    shareToken:       row.share_token as string | undefined,
   };
 }
 
@@ -54,7 +56,9 @@ function projectToRow(p: Project): Record<string, unknown> {
     page_tags:        p.pageTags ?? {},
     page_names:       p.pageNames ?? {},
     page_drawings:    p.pageDrawings ?? {},
+    page_states:      p.pageStates ?? {},
     settings:         p.settings ?? {},
+    share_token:      p.shareToken ?? null,
     updated_at:       p.updatedAt,
     created_at:       p.createdAt,
   };
@@ -64,7 +68,7 @@ function projectToRow(p: Project): Record<string, unknown> {
 
 export async function listProjects(): Promise<Omit<Project, "tree">[]> {
   const { data, error } = await db()
-    .select("id,user_id,name,domain,thumbnail_url,screenshot_job_id,is_favorite,is_archived,urls,page_meta,annotations,custom_nodes,tags,page_tags,page_names,page_drawings,created_at,updated_at")
+    .select("id,user_id,name,domain,thumbnail_url,screenshot_job_id,is_favorite,is_archived,urls,page_meta,annotations,custom_nodes,tags,page_tags,page_names,page_drawings,page_states,share_token,created_at,updated_at")
     .order("updated_at", { ascending: false });
 
   if (error) throw new Error(error.message);
@@ -224,4 +228,34 @@ export async function updateCustomNodePosition(
   if (node) node.position = position;
   project.updatedAt = new Date().toISOString();
   await saveProject(project);
+}
+
+export async function updatePageState(id: string, key: string, state: string | null): Promise<void> {
+  const project = await getProject(id);
+  if (!project) return;
+  if (!project.pageStates) project.pageStates = {};
+  if (state === null) {
+    delete project.pageStates[key];
+  } else {
+    project.pageStates[key] = state;
+  }
+  project.updatedAt = new Date().toISOString();
+  await saveProject(project);
+}
+
+export async function setProjectShareToken(id: string, token: string | null): Promise<void> {
+  const { error } = await db()
+    .update({ share_token: token, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function getProjectByShareToken(token: string): Promise<Project | null> {
+  const { data, error } = await createAdminClient()
+    .from("projects")
+    .select("*")
+    .eq("share_token", token)
+    .single();
+  if (error || !data) return null;
+  return rowToProject(data as Record<string, unknown>);
 }

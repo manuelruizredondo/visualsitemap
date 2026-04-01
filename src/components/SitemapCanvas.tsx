@@ -105,6 +105,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
   const [newName, setNewName] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [filterTagId, setFilterTagId] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [edgeStyle, setEdgeStyle] = useState<"bezier" | "cleanStep">("bezier");
   const [verticalFromDepth, setVerticalFromDepth] = useState(2);
@@ -140,6 +141,10 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
   // Ref for custom image change callback (used by PageNode drag & drop)
   const customImageChangeRef = useRef<(pageKey: string, customImageUrl: string) => void>(() => {});
   const stableCustomImageChange = useCallback((pageKey: string, customImageUrl: string) => customImageChangeRef.current(pageKey, customImageUrl), []);
+
+  // Ref for state change callback (used by PageNode and NodeDrawer)
+  const stateChangeRef = useRef<(pageKey: string, state: string | null) => void>(() => {});
+  const stableStateChange = useCallback((pageKey: string, state: string | null) => stateChangeRef.current(pageKey, state), []);
 
   // ── Persist visualization settings (debounced) ──────────────────────
   const settingsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -217,20 +222,22 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
                 availableTags: proj.tags ?? [],
                 selectedTagIds: proj.pageTags?.[n.data.url] ?? [],
                 onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag, onCustomImageChange: stableCustomImageChange,
+                pageState: proj.pageStates?.[n.data.url] ?? undefined,
+                onStateChange: stableStateChange,
               },
             };
           }
           const customName = proj.pageNames?.[n.data.url];
-          return { ...n, data: { ...n.data, tags, title: customName || n.data.label, availableTags: proj.tags ?? [], selectedTagIds: proj.pageTags?.[n.data.url] ?? [], onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag, onCustomImageChange: stableCustomImageChange } };
+          return { ...n, data: { ...n.data, tags, title: customName || n.data.label, availableTags: proj.tags ?? [], selectedTagIds: proj.pageTags?.[n.data.url] ?? [], onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag, onCustomImageChange: stableCustomImageChange, pageState: proj.pageStates?.[n.data.url] ?? undefined, onStateChange: stableStateChange } };
         });
 
         // Enrich custom nodes with pageMeta
         const enrichedCustomNodes = customNodes.map((n) => {
           const meta = proj.pageMeta?.[n.id];
           if (meta) {
-            return { ...n, data: { ...n.data, customImageUrl: meta.customImageUrl || undefined, availableTags: proj.tags ?? [], selectedTagIds: proj.pageTags?.[n.id] ?? [], onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag, onCustomImageChange: stableCustomImageChange } };
+            return { ...n, data: { ...n.data, customImageUrl: meta.customImageUrl || undefined, availableTags: proj.tags ?? [], selectedTagIds: proj.pageTags?.[n.id] ?? [], onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag, onCustomImageChange: stableCustomImageChange, pageState: proj.pageStates?.[n.id] ?? undefined, onStateChange: stableStateChange } };
           }
-          return { ...n, data: { ...n.data, availableTags: proj.tags ?? [], selectedTagIds: proj.pageTags?.[n.id] ?? [], onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag, onCustomImageChange: stableCustomImageChange } };
+          return { ...n, data: { ...n.data, availableTags: proj.tags ?? [], selectedTagIds: proj.pageTags?.[n.id] ?? [], onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag, onCustomImageChange: stableCustomImageChange, pageState: proj.pageStates?.[n.id] ?? undefined, onStateChange: stableStateChange } };
         });
 
         const { nodes: layouted, edges: layoutedEdges } = getLayoutedElements(
@@ -559,6 +566,16 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
     }
   }, [projectId, newName, project?.name]);
 
+  const handleShareToggle = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/share`, { method: "POST" });
+      const data = await res.json();
+      setProject((prev) => prev ? { ...prev, shareToken: data.shareToken ?? undefined } : prev);
+    } catch (err) {
+      console.error("Failed to toggle share:", err);
+    }
+  }, [projectId]);
+
   const handleRecaptureAll = useCallback(async () => {
     if (screenshotStatus?.status === "processing") return; // already running
     try {
@@ -825,6 +842,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
           isVirtual: false,
           isCustom: true,
           onNameChange: stableNameChange, onDelete: stableDelete, onCustomImageChange: stableCustomImageChange,
+          onStateChange: stableStateChange,
         },
       };
       const newEdge: Edge = {
@@ -894,6 +912,29 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
     });
     // Also update selectedNode so drawer image updates immediately
     setSelectedNode((prev) => prev ? { ...prev, customImageUrl } : prev);
+  }
+
+  function handleStateChange(pageKey: string, state: string | null) {
+    // Update node data
+    setNodes((prev) => prev.map((n) => {
+      const nKey = n.data.isCustom ? n.id : n.data.url;
+      if (nKey !== pageKey) return n;
+      return { ...n, data: { ...n.data, pageState: state ?? undefined } };
+    }));
+    // Persist
+    fetch(`/api/projects/${projectId}/page-state`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pageKey, state }),
+    });
+    // Update project state
+    setProject((prev) => {
+      if (!prev) return prev;
+      const pageStates = { ...(prev.pageStates ?? {}) };
+      if (state === null) delete pageStates[pageKey];
+      else pageStates[pageKey] = state;
+      return { ...prev, pageStates };
+    });
   }
 
   function handleTagsChange(pageKey: string, tagIds: string[]) {
@@ -1019,6 +1060,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
   deleteRef.current = handleDeleteNode;
   toggleTagRef.current = handleToggleTag;
   customImageChangeRef.current = handleCustomImageChange;
+  stateChangeRef.current = handleStateChange;
 
   async function handleRecapture(pageKey: string, url: string) {
     try {
@@ -1346,6 +1388,15 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
                       Exportar como PNG
                     </button>
 
+                    <button onClick={() => { window.open(`/projects/${projectId}/report`, '_blank'); setSettingsOpen(false); }}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 10, border: "none", cursor: "pointer", background: "transparent", fontSize: 13, color: "var(--ec-on-surface)", textAlign: "left", transition: "background 0.1s" }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--ec-surface-container-low)"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                    >
+                      <svg className="w-4 h-4 flex-shrink-0" style={{ color: "var(--ec-on-surface-variant)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      Exportar como PDF
+                    </button>
+
                     {/* ZIP upload */}
                     <input
                       ref={zipInputRef}
@@ -1386,6 +1437,49 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
                     )}
                   </div>
 
+                  {/* Share section */}
+                  <div style={{ height: 1, background: "var(--ec-surface-container-high)", margin: "8px 0" }} />
+                  <div style={{ padding: "6px 16px 10px" }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--ec-on-surface-variant)", marginBottom: 8 }}>Compartir</p>
+                    {project?.shareToken ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--ec-surface-container-low)", borderRadius: 10, padding: "6px 10px" }}>
+                          <input
+                            readOnly
+                            value={`${typeof window !== "undefined" ? window.location.origin : ""}/share/${project.shareToken}`}
+                            style={{ flex: 1, fontSize: 11, border: "none", background: "transparent", color: "var(--ec-on-surface)", outline: "none", overflow: "hidden", textOverflow: "ellipsis" }}
+                            onClick={(e) => (e.target as HTMLInputElement).select()}
+                          />
+                          <button
+                            onClick={() => {
+                              if (typeof window !== "undefined") {
+                                navigator.clipboard.writeText(`${window.location.origin}/share/${project.shareToken}`);
+                              }
+                            }}
+                            style={{ border: "none", background: "transparent", cursor: "pointer", color: "var(--ec-secondary)", fontSize: 11, fontWeight: 600, flexShrink: 0 }}
+                            title="Copiar enlace"
+                          >
+                            Copiar
+                          </button>
+                        </div>
+                        <button
+                          onClick={handleShareToggle}
+                          style={{ width: "100%", padding: "7px 0", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, background: "#fef2f2", color: "#ef4444", transition: "all 0.15s" }}
+                        >
+                          Desactivar enlace
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleShareToggle}
+                        style={{ width: "100%", padding: "8px 0", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, background: "var(--ec-secondary)", color: "#fff", transition: "all 0.15s", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                      >
+                        <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                        Generar enlace compartido
+                      </button>
+                    )}
+                  </div>
+
                   {/* Tag filter */}
                   {(project?.tags ?? []).length > 0 && (
                     <>
@@ -1422,6 +1516,37 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
                       </div>
                     </>
                   )}
+
+                  {/* Status filter */}
+                  <div style={{ height: 1, background: "var(--ec-surface-container-high)", margin: "8px 0" }} />
+                  <div style={{ padding: "6px 16px 10px" }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--ec-on-surface-variant)", marginBottom: 8 }}>Filtrar por estado</p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {([
+                        { key: null,       label: "Todos",             color: undefined },
+                        { key: "borrador", label: "Borrador",          color: "#9ca3af" },
+                        { key: "revision", label: "En revisión",       color: "#f59e0b" },
+                        { key: "aprobado", label: "Aprobado",          color: "#22c55e" },
+                        { key: "cambios",  label: "Requiere cambios",  color: "#ef4444" },
+                      ] as const).map((s) => (
+                        <button key={s.key ?? "all"} onClick={() => {
+                          const val = s.key ?? null;
+                          setFilterStatus(val);
+                          setNodes((prev) => prev.map((n) => {
+                            const nKey = n.data.isCustom ? n.id : n.data.url;
+                            const nState = project?.pageStates?.[nKey];
+                            const matches = !val || nState === val;
+                            return { ...n, style: { ...n.style, opacity: matches ? 1 : 0.3 } };
+                          }));
+                        }}
+                        style={{ padding: "5px 10px", borderRadius: 9999, fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, background: filterStatus === s.key ? (s.color ?? "var(--ec-secondary)") : "var(--ec-surface-container-low)", color: filterStatus === s.key ? "#fff" : "var(--ec-on-surface-variant)", transition: "all 0.15s" }}
+                        >
+                          {s.color && <span style={{ width: 8, height: 8, borderRadius: 4, background: s.color, flexShrink: 0 }} />}
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </>
             )}
@@ -1527,6 +1652,8 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
           savedDrawing={project?.pageDrawings?.[selectedNode.nodeKey]}
           onDrawingSave={handleDrawingSave}
           onRecapture={handleRecapture}
+          pageState={project?.pageStates?.[selectedNode.nodeKey]}
+          onStateChange={handleStateChange}
         />
       )}
     </div>

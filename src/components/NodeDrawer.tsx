@@ -30,6 +30,8 @@ interface NodeDrawerProps {
   savedDrawing?: string;
   onDrawingSave: (pageKey: string, drawingData: string | null) => void;
   onRecapture: (pageKey: string, url: string) => Promise<void>;
+  pageState?: string;
+  onStateChange: (pageKey: string, state: string | null) => void;
 }
 
 const TYPE_CONFIG: Record<AnnotationType, { label: string; color: string; bg: string; dot: string }> = {
@@ -131,6 +133,7 @@ export default function NodeDrawer({
   pageMeta, annotations, visible, onClose, onAnnotationsChange, onCustomImageChange,
   availableTags, selectedTagIds, onTagsChange, onTagCreated, onTagDeleted,
   customName, onNameChange, savedDrawing, onDrawingSave, onRecapture,
+  pageState, onStateChange,
 }: NodeDrawerProps) {
   const [localAnnotations, setLocalAnnotations] = useState<Annotation[]>(annotations);
   const [newText, setNewText] = useState("");
@@ -360,6 +363,35 @@ export default function NodeDrawer({
                   </div>
                 </div>
                 <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+              </div>
+
+              {/* Status selector */}
+              <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--ec-surface-container-high)" }}>
+                <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--ec-on-surface-variant)", marginBottom: 8 }}>Estado</p>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {([
+                    { key: null,       label: "Sin estado",       color: "var(--ec-surface-container)" },
+                    { key: "borrador", label: "Borrador",          color: "#9ca3af" },
+                    { key: "revision", label: "En revisión",       color: "#f59e0b" },
+                    { key: "aprobado", label: "Aprobado",          color: "#22c55e" },
+                    { key: "cambios",  label: "Requiere cambios",  color: "#ef4444" },
+                  ] as const).map((s) => (
+                    <button
+                      key={s.key ?? "none"}
+                      onClick={() => onStateChange(nodeKey, s.key)}
+                      style={{
+                        padding: "5px 10px", borderRadius: 9999, fontSize: 11, fontWeight: 600,
+                        border: "2px solid transparent", cursor: "pointer", transition: "all 0.15s",
+                        background: pageState === s.key ? s.color : "var(--ec-surface-container-low)",
+                        color: pageState === s.key ? (s.key ? "#fff" : "var(--ec-on-surface-variant)") : "var(--ec-on-surface-variant)",
+                        outline: pageState === s.key ? "none" : undefined,
+                        boxShadow: pageState === s.key ? `0 0 0 2px ${s.color}40` : "none",
+                      }}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Page info */}

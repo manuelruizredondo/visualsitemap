@@ -158,7 +158,7 @@ function NodeContextMenu({
 
 /* ── Main node component ────────────────────────────────────────────── */
 function PageNodeComponent({ data }: { data: PageNodeData }) {
-  const { label, url, fullPath, screenshotUrl, thumbnailUrl, customImageUrl, title, depth, isVirtual, isLanguage, hasError, isCapturing, seoScore, a11yScore, nodeId, onNameChange, onDelete, onToggleTag } = data;
+  const { label, url, fullPath, screenshotUrl, thumbnailUrl, customImageUrl, title, depth, isVirtual, isLanguage, hasError, isCapturing, seoScore, a11yScore, nodeId, onNameChange, onDelete, onToggleTag, pageState, onStateChange } = data;
   // Card shows thumbnail (viewport-only, 400px) if available; falls back to full screenshot
   const displayImage = customImageUrl || thumbnailUrl || screenshotUrl;
   const displayTitle = title || label;
@@ -334,7 +334,7 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
         boxShadow: depth === 0 ? 'var(--ec-shadow-elevated), 0 0 0 2px var(--ec-primary-container)' : 'var(--ec-shadow-ambient)',
         transition: 'box-shadow 0.2s, transform 0.2s',
         cursor: 'pointer',
-        border: hasError ? '2px solid var(--ec-error)' : 'none',
+        border: hasError ? '2px solid var(--ec-error)' : pageState ? `2px solid ${({ borrador: '#9ca3af', revision: '#f59e0b', aprobado: '#22c55e', cambios: '#ef4444' }[pageState] ?? 'transparent')}` : 'none',
         position: 'relative',
       }}
       onMouseEnter={(e) => {
@@ -423,6 +423,24 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
           )}
         </div>
       )}
+
+      {/* Status badge */}
+      {pageState && (() => {
+        const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+          borrador:  { label: "Borrador",    color: "#9ca3af" },
+          revision:  { label: "En revisión", color: "#f59e0b" },
+          aprobado:  { label: "Aprobado",    color: "#22c55e" },
+          cambios:   { label: "Requiere cambios", color: "#ef4444" },
+        };
+        const cfg = STATUS_CONFIG[pageState];
+        if (!cfg) return null;
+        return (
+          <div style={{ padding: '3px 10px 5px', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: cfg.color, flexShrink: 0, display: 'inline-block' }} />
+            <span style={{ fontSize: 10, fontWeight: 600, color: cfg.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{cfg.label}</span>
+          </div>
+        );
+      })()}
 
       {/* Screenshot thumbnail */}
       <div

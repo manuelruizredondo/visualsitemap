@@ -133,4 +133,6 @@ export interface Project {
   pageTags?: Record<string, string[]>;       // maps page key (url or nodeId) to array of tag IDs
   pageNames?: Record<string, string>;        // custom display names for pages (overrides auto-detected title)
   pageDrawings?: Record<string, string>;     // drawing overlay data URLs (transparent PNGs) keyed by page key
+  pageStates?: Record<string, string>;       // "borrador" | "revision" | "aprobado" | "cambios"
+  shareToken?: string;                       // Public token for sharing (read-only view)
 }

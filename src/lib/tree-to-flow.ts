@@ -26,6 +26,8 @@ export interface PageNodeData {
   onDelete?: (nodeId: string) => void;
   onToggleTag?: (pageKey: string, tagId: string, selected: boolean) => void;
   onCustomImageChange?: (pageKey: string, customImageUrl: string) => void;
+  pageState?: string;
+  onStateChange?: (pageKey: string, state: string | null) => void;
   [key: string]: unknown;
 }
 
