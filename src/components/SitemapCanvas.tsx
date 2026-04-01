@@ -772,7 +772,13 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
 
     if (drawerCloseTimerRef.current) clearTimeout(drawerCloseTimerRef.current);
     setSelectedNode(newSelected);
-    setDrawerVisible(true);
+    // If drawer is already open just swap content — no need to re-animate.
+    // If it was closed, mount first (visible=false) then animate in next frame.
+    setDrawerVisible((prev) => {
+      if (prev) return true;
+      requestAnimationFrame(() => setDrawerVisible(true));
+      return false;
+    });
   }, []);
 
   function closeDrawer() {
