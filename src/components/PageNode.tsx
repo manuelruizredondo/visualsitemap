@@ -168,6 +168,10 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Drag & drop state for image
+  const [dragOver, setDragOver] = useState(false);
+  const [uploadingDrop, setUploadingDrop] = useState(false);
+
   // Context menu state
   const [contextMenu, setContextMenu] = useState(false);
 
@@ -213,6 +217,30 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
   const vfd = (data.verticalFromDepth ?? 2);
   const isBracketChild = depth >= vfd + 1;
   const targetPos = isBracketChild ? Position.Left : Position.Top;
+
+  const handleImageDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    const projectId = window.__VS_PROJECT_ID__;
+    if (!projectId) return;
+    setUploadingDrop(true);
+    try {
+      const pageKey = data.isCustom ? nodeId : url;
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("key", pageKey);
+      const res = await fetch(`/api/projects/${projectId}/images`, { method: "POST", body: formData });
+      const result = await res.json();
+      if (result.customImageUrl) {
+        data.onCustomImageChange?.(pageKey, result.customImageUrl);
+      }
+    } finally {
+      setUploadingDrop(false);
+    }
+  }, [data, nodeId, url]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -397,7 +425,23 @@ function PageNodeComponent({ data }: { data: PageNodeData }) {
       )}
 
       {/* Screenshot thumbnail */}
-      <div style={{ height: 110, background: 'var(--ec-surface-container-low)', overflow: 'hidden', position: 'relative' }}>
+      <div
+        style={{ height: 110, background: dragOver ? 'var(--ec-primary-container)' : 'var(--ec-surface-container-low)', overflow: 'hidden', position: 'relative', transition: 'background 0.15s' }}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+        onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+        onDragLeave={(e) => { e.stopPropagation(); setDragOver(false); }}
+        onDrop={handleImageDrop}
+      >
+        {dragOver && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(90,59,221,0.15)', pointerEvents: 'none' }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--ec-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </div>
+        )}
+        {uploadingDrop && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.35)' }}>
+            <div style={{ width: 20, height: 20, border: '2px solid #fff', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+          </div>
+        )}
         {displayImage ? (
           <img
             src={displayImage}

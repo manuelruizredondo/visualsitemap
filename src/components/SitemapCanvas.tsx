@@ -108,12 +108,16 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [edgeStyle, setEdgeStyle] = useState<"bezier" | "cleanStep">("bezier");
   const [verticalFromDepth, setVerticalFromDepth] = useState(2);
+  const [zipUploading, setZipUploading] = useState(false);
+  const [zipResult, setZipResult] = useState<{ saved: number; total: number; unmatched: string[] } | null>(null);
+  const zipInputRef = useRef<HTMLInputElement | null>(null);
   const drawerCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { fitView, screenToFlowPosition } = useReactFlow();
   const thumbnailSentRef = useRef(false);
   const pageMetaSentRef = useRef(false);
   const pendingAutoCaptureRef = useRef<{ urls: string[]; jobId: string } | null>(null);
   const autoCaptureTriggeredRef = useRef(false);
+  const captureAbortedRef = useRef(false);
   const router = useRouter();
 
   // Expose projectId globally for PageNode inline editing
@@ -132,6 +136,10 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
   // Ref for toggle tag callback (used by PageNode context menu)
   const toggleTagRef = useRef<(pageKey: string, tagId: string, selected: boolean) => void>(() => {});
   const stableToggleTag = useCallback((pageKey: string, tagId: string, selected: boolean) => toggleTagRef.current(pageKey, tagId, selected), []);
+
+  // Ref for custom image change callback (used by PageNode drag & drop)
+  const customImageChangeRef = useRef<(pageKey: string, customImageUrl: string) => void>(() => {});
+  const stableCustomImageChange = useCallback((pageKey: string, customImageUrl: string) => customImageChangeRef.current(pageKey, customImageUrl), []);
 
   // ── Persist visualization settings (debounced) ──────────────────────
   const settingsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -208,21 +216,21 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
                 tags,
                 availableTags: proj.tags ?? [],
                 selectedTagIds: proj.pageTags?.[n.data.url] ?? [],
-                onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag,
+                onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag, onCustomImageChange: stableCustomImageChange,
               },
             };
           }
           const customName = proj.pageNames?.[n.data.url];
-          return { ...n, data: { ...n.data, tags, title: customName || n.data.label, availableTags: proj.tags ?? [], selectedTagIds: proj.pageTags?.[n.data.url] ?? [], onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag } };
+          return { ...n, data: { ...n.data, tags, title: customName || n.data.label, availableTags: proj.tags ?? [], selectedTagIds: proj.pageTags?.[n.data.url] ?? [], onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag, onCustomImageChange: stableCustomImageChange } };
         });
 
         // Enrich custom nodes with pageMeta
         const enrichedCustomNodes = customNodes.map((n) => {
           const meta = proj.pageMeta?.[n.id];
           if (meta) {
-            return { ...n, data: { ...n.data, customImageUrl: meta.customImageUrl || undefined, availableTags: proj.tags ?? [], selectedTagIds: proj.pageTags?.[n.id] ?? [], onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag } };
+            return { ...n, data: { ...n.data, customImageUrl: meta.customImageUrl || undefined, availableTags: proj.tags ?? [], selectedTagIds: proj.pageTags?.[n.id] ?? [], onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag, onCustomImageChange: stableCustomImageChange } };
           }
-          return { ...n, data: { ...n.data, availableTags: proj.tags ?? [], selectedTagIds: proj.pageTags?.[n.id] ?? [], onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag } };
+          return { ...n, data: { ...n.data, availableTags: proj.tags ?? [], selectedTagIds: proj.pageTags?.[n.id] ?? [], onNameChange: stableNameChange, onDelete: stableDelete, onToggleTag: stableToggleTag, onCustomImageChange: stableCustomImageChange } };
         });
 
         const { nodes: layouted, edges: layoutedEdges } = getLayoutedElements(
@@ -275,6 +283,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
     pendingAutoCaptureRef.current = null;
 
     (async () => {
+      captureAbortedRef.current = false;
       setScreenshotStatus({ jobId, status: "processing", total: urls.length, completed: 0, results: [] });
       thumbnailSentRef.current = false;
       pageMetaSentRef.current = false;
@@ -283,6 +292,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
       const pageMeta: Record<string, PageMeta> = {};
 
       for (let i = 0; i < urls.length; i++) {
+        if (captureAbortedRef.current) break;
         const url = urls[i];
 
         // Mark this node as capturing
@@ -351,10 +361,14 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
           );
         }
 
-        setScreenshotStatus({ jobId, status: "processing", total: urls.length, completed: i + 1, results });
+        if (!captureAbortedRef.current) {
+          setScreenshotStatus({ jobId, status: "processing", total: urls.length, completed: i + 1, results });
+        }
       }
 
-      setScreenshotStatus({ jobId, status: "complete", total: urls.length, completed: urls.length, results });
+      if (!captureAbortedRef.current) {
+        setScreenshotStatus({ jobId, status: "complete", total: urls.length, completed: urls.length, results });
+      }
 
       if (Object.keys(pageMeta).length > 0) {
         setProject((prev) =>
@@ -557,6 +571,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
       const { jobId, urls } = (await res.json()) as { jobId: string; urls: string[]; total: number };
 
       // Reset refs
+      captureAbortedRef.current = false;
       thumbnailSentRef.current = false;
       pageMetaSentRef.current = false;
 
@@ -571,6 +586,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
       const pageMeta: Record<string, PageMeta> = {};
 
       for (let i = 0; i < urls.length; i++) {
+        if (captureAbortedRef.current) break;
         const url = urls[i];
 
         // Mark this node as capturing
@@ -642,11 +658,15 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
         }
 
         // Update progress
-        setScreenshotStatus({ jobId, status: "processing", total: urls.length, completed: i + 1, results });
+        if (!captureAbortedRef.current) {
+          setScreenshotStatus({ jobId, status: "processing", total: urls.length, completed: i + 1, results });
+        }
       }
 
-      // Step 3: Mark as complete
-      setScreenshotStatus({ jobId, status: "complete", total: urls.length, completed: urls.length, results });
+      // Step 3: Mark as complete (only if not aborted)
+      if (!captureAbortedRef.current) {
+        setScreenshotStatus({ jobId, status: "complete", total: urls.length, completed: urls.length, results });
+      }
 
       // Update local project pageMeta
       if (Object.keys(pageMeta).length > 0) {
@@ -659,6 +679,55 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
       setScreenshotStatus((prev) => prev ? { ...prev, status: "error" } : null);
     }
   }, [projectId, screenshotStatus, setNodes]);
+
+  const handleStopCapture = useCallback(() => {
+    captureAbortedRef.current = true;
+    // Clear isCapturing flag on all nodes
+    setNodes((prev) =>
+      prev.map((node) =>
+        node.data.isCapturing ? { ...node, data: { ...node.data, isCapturing: false } } : node
+      )
+    );
+    setScreenshotStatus(null);
+  }, [setNodes]);
+
+  const handleZipUpload = useCallback(async (file: File) => {
+    setZipUploading(true);
+    setZipResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/projects/${projectId}/upload-zip`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Error al subir el ZIP");
+      setZipResult({ saved: data.saved, total: data.total, unmatched: data.unmatched ?? [] });
+
+      // Refresh project data so new custom images appear
+      const projRes = await fetch(`/api/projects/${projectId}`);
+      if (projRes.ok) {
+        const updated = await projRes.json();
+        setProject(updated);
+        // Rebuild nodes with new pageMeta
+        setNodes((prev) =>
+          prev.map((node) => {
+            const url: string = node.data.url as string;
+            const meta = updated.pageMeta?.[url];
+            if (meta?.customImageUrl) {
+              return { ...node, data: { ...node.data, customImageUrl: meta.customImageUrl } };
+            }
+            return node;
+          })
+        );
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Error al procesar el ZIP");
+    } finally {
+      setZipUploading(false);
+    }
+  }, [projectId, setNodes]);
 
   const handleExport = useCallback(async () => {
     try {
@@ -749,7 +818,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
           depth: 1,
           isVirtual: false,
           isCustom: true,
-          onNameChange: stableNameChange, onDelete: stableDelete,
+          onNameChange: stableNameChange, onDelete: stableDelete, onCustomImageChange: stableCustomImageChange,
         },
       };
       const newEdge: Edge = {
@@ -943,6 +1012,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
   nameChangeRef.current = handleNameChange;
   deleteRef.current = handleDeleteNode;
   toggleTagRef.current = handleToggleTag;
+  customImageChangeRef.current = handleCustomImageChange;
 
   async function handleRecapture(pageKey: string, url: string) {
     try {
@@ -1269,6 +1339,45 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
                       <svg className="w-4 h-4 flex-shrink-0" style={{ color: "var(--ec-on-surface-variant)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                       Exportar como PNG
                     </button>
+
+                    {/* ZIP upload */}
+                    <input
+                      ref={zipInputRef}
+                      type="file"
+                      accept=".zip"
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) { handleZipUpload(file); setSettingsOpen(false); }
+                        e.target.value = "";
+                      }}
+                    />
+                    <button
+                      onClick={() => zipInputRef.current?.click()}
+                      disabled={zipUploading}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 10, border: "none", cursor: zipUploading ? "default" : "pointer", background: "transparent", fontSize: 13, color: "var(--ec-on-surface)", textAlign: "left", transition: "background 0.1s", opacity: zipUploading ? 0.5 : 1 }}
+                      onMouseEnter={(e) => { if (!zipUploading) (e.currentTarget as HTMLElement).style.background = "var(--ec-surface-container-low)"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                    >
+                      <svg className="w-4 h-4 flex-shrink-0" style={{ color: "var(--ec-on-surface-variant)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12" /></svg>
+                      {zipUploading ? "Procesando ZIP…" : "Subir imágenes (ZIP)"}
+                    </button>
+
+                    {/* ZIP result feedback */}
+                    {zipResult && (
+                      <div style={{ margin: "4px 10px 6px", padding: "8px 12px", borderRadius: 8, background: zipResult.saved > 0 ? "var(--ec-surface-container-low)" : "var(--ec-surface-container-high)", fontSize: 12, color: "var(--ec-on-surface-variant)" }}>
+                        {zipResult.saved > 0 ? (
+                          <span>✓ {zipResult.saved} de {zipResult.total} imágenes asignadas</span>
+                        ) : (
+                          <span>No se encontraron coincidencias</span>
+                        )}
+                        {zipResult.unmatched.length > 0 && (
+                          <div style={{ marginTop: 4, fontSize: 11 }}>
+                            Sin coincidir: {zipResult.unmatched.join(", ")}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Tag filter */}
@@ -1382,6 +1491,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
           completed={screenshotStatus.completed}
           total={screenshotStatus.total}
           status={screenshotStatus.status}
+          onStop={handleStopCapture}
         />
       )}
 

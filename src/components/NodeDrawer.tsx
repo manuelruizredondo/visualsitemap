@@ -146,6 +146,7 @@ export default function NodeDrawer({
   const [editTitleValue, setEditTitleValue] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
   const [recapturing, setRecapturing] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -201,6 +202,23 @@ export default function NodeDrawer({
       const data = await res.json();
       if (data.customImageUrl) { setLocalCustomImage(data.customImageUrl); setImgError(false); onCustomImageChange(nodeKey, data.customImageUrl); }
     } finally { setUploadingImage(false); if (fileInputRef.current) fileInputRef.current.value = ""; }
+  }
+
+  async function handleImageDropOnDrawer(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    setUploadingImage(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("key", nodeKey);
+      const res = await fetch(`/api/projects/${projectId}/images`, { method: "POST", body: formData });
+      const data = await res.json();
+      if (data.customImageUrl) { setLocalCustomImage(data.customImageUrl); setImgError(false); onCustomImageChange(nodeKey, data.customImageUrl); }
+    } finally { setUploadingImage(false); }
   }
 
   function formatDate(iso: string) {
@@ -296,7 +314,20 @@ export default function NodeDrawer({
           {activeTab === "info" && (
             <>
               {/* Screenshot */}
-              <div style={{ position: "relative", background: "var(--ec-surface-container-low)", borderBottom: "1px solid var(--ec-surface-container-high)" }} className="group">
+              <div
+                style={{ position: "relative", background: dragOver ? "var(--ec-primary-container)" : "var(--ec-surface-container-low)", borderBottom: "1px solid var(--ec-surface-container-high)", transition: "background 0.15s" }}
+                className="group"
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+                onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+                onDragLeave={(e) => { e.stopPropagation(); setDragOver(false); }}
+                onDrop={handleImageDropOnDrawer}
+              >
+                {dragOver && (
+                  <div style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, background: "rgba(90,59,221,0.12)", pointerEvents: "none" }}>
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--ec-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ec-primary)" }}>Suelta para cambiar imagen</span>
+                  </div>
+                )}
                 {displayImage && !imgError ? (
                   <img src={displayImage} alt={title}
                     style={{ width: "100%", objectFit: "cover", objectPosition: "top", maxHeight: 210, cursor: "zoom-in" }}
