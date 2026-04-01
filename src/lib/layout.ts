@@ -15,13 +15,15 @@ const BRACKET_INDENT = NODE_WIDTH / 2 + 30;
 /**
  * A partir de este depth, los hijos se apilan en vertical estilo bracket
  * en lugar de distribuirse en fila horizontal.
+ * Configurable via the `verticalFromDepth` parameter.
  */
-const VERTICAL_FROM_DEPTH = 2;
+const DEFAULT_VERTICAL_FROM_DEPTH = 2;
 
 export function getLayoutedElements<T extends Record<string, unknown>>(
   nodes: Node<T>[],
   edges: Edge[],
-  direction: "TB" | "LR" = "TB"
+  direction: "TB" | "LR" = "TB",
+  verticalFromDepth: number = DEFAULT_VERTICAL_FROM_DEPTH
 ): { nodes: Node<T>[]; edges: Edge[] } {
   if (nodes.length === 0) return { nodes, edges };
 
@@ -52,7 +54,7 @@ export function getLayoutedElements<T extends Record<string, unknown>>(
   }
 
   function isVertical(id: string): boolean {
-    return getDepth(id) >= VERTICAL_FROM_DEPTH;
+    return getDepth(id) >= verticalFromDepth;
   }
 
   // ── Subtree sizes ─────────────────────────────────────────────────

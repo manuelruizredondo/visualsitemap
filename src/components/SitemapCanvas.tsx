@@ -107,6 +107,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
   const [filterTagId, setFilterTagId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [edgeStyle, setEdgeStyle] = useState<"bezier" | "cleanStep">("bezier");
+  const [verticalFromDepth, setVerticalFromDepth] = useState(2);
   const drawerCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { fitView, screenToFlowPosition } = useReactFlow();
   const thumbnailSentRef = useRef(false);
@@ -203,7 +204,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
         });
 
         const { nodes: layouted, edges: layoutedEdges } = getLayoutedElements(
-          enrichedTreeNodes, treeEdges, "TB"
+          enrichedTreeNodes, treeEdges, "TB", verticalFromDepth
         );
 
         setNodes([...layouted, ...enrichedCustomNodes]);
@@ -344,14 +345,23 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
         const tgtCustom = nodes.find((n) => n.id === e.target)?.data.isCustom;
         return srcCustom || tgtCustom;
       });
-      const { nodes: layouted, edges: layoutedEdges } = getLayoutedElements(treeNodes, treeEdges, dir);
+      const { nodes: layouted, edges: layoutedEdges } = getLayoutedElements(treeNodes, treeEdges, dir, verticalFromDepth);
       setNodes([...layouted, ...customNodes]);
       const allEdges = [...layoutedEdges, ...customEdges].map((e) => ({ ...e, type: eStyle }));
       setEdges(allEdges);
       setTimeout(() => fitView({ padding: 0.2 }), 50);
     },
-    [nodes, edges, edgeStyle, setNodes, setEdges, fitView]
+    [nodes, edges, edgeStyle, verticalFromDepth, setNodes, setEdges, fitView]
   );
+
+  // Re-layout when verticalFromDepth changes
+  const verticalFromDepthRef = useRef(verticalFromDepth);
+  useEffect(() => {
+    if (verticalFromDepthRef.current !== verticalFromDepth && nodes.length > 0) {
+      verticalFromDepthRef.current = verticalFromDepth;
+      onLayout(direction);
+    }
+  }, [verticalFromDepth, direction, onLayout, nodes.length]);
 
   // ── Drag parent → move descendants too ──────────────────────────────
   const dragStartPos = useRef<Map<string, { x: number; y: number }>>(new Map());
@@ -1131,6 +1141,27 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
                         style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, transition: "all 0.15s", background: direction === "LR" ? "var(--ec-secondary)" : "var(--ec-surface-container-low)", color: direction === "LR" ? "#fff" : "var(--ec-on-surface-variant)" }}
                       >Horizontal</button>
                     </div>
+                  </div>
+
+                  {/* Vertical from depth */}
+                  <div style={{ padding: "10px 16px 6px" }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--ec-on-surface-variant)", marginBottom: 8 }}>Vertical desde nivel</p>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min={1}
+                        max={6}
+                        value={verticalFromDepth}
+                        onChange={(e) => {
+                          setVerticalFromDepth(Number(e.target.value));
+                        }}
+                        style={{ flex: 1, accentColor: "var(--ec-secondary)" }}
+                      />
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ec-on-surface)", minWidth: 20, textAlign: "center" }}>{verticalFromDepth}</span>
+                    </div>
+                    <p style={{ fontSize: 10, color: "var(--ec-on-surface-variant)", marginTop: 4 }}>
+                      Los hijos a partir de este nivel se apilan en vertical
+                    </p>
                   </div>
 
                   {/* Actions list */}
