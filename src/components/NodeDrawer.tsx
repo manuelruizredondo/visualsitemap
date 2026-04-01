@@ -332,30 +332,32 @@ export default function NodeDrawer({
                     <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ec-primary)" }}>Suelta para cambiar imagen</span>
                   </div>
                 )}
-                {displayImage && !imgError ? (
-                  <img src={displayImage} alt={title}
-                    style={{ width: "100%", objectFit: "cover", objectPosition: "top", maxHeight: 210, cursor: "zoom-in" }}
-                    onError={() => setImgError(true)}
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setImageExpanded(true); }}
-                  />
-                ) : (
-                  <div style={{ height: 140, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--ec-surface-container-high)" }}>
-                    <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                  </div>
-                )}
-                <div className="absolute bottom-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  {url && (
-                    <button onClick={handleRecapture} disabled={recapturing}
+                <div style={{ position: "relative", aspectRatio: "40 / 21", overflow: "hidden", background: "var(--ec-surface-container-low)" }}>
+                  {displayImage && !imgError ? (
+                    <img src={displayImage} alt={title}
+                      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", cursor: "zoom-in" }}
+                      onError={() => setImgError(true)}
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setImageExpanded(true); }}
+                    />
+                  ) : (
+                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--ec-surface-container-high)" }}>
+                      <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    </div>
+                  )}
+                  <div className="absolute bottom-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity" style={{ zIndex: 10 }}>
+                    {url && (
+                      <button onClick={handleRecapture} disabled={recapturing}
+                        style={{ padding: "6px 10px", borderRadius: 10, border: "none", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, background: "rgba(0,0,0,0.6)", color: "#fff" }}
+                      >
+                        {recapturing ? <><div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />Capturando...</> : <><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Recapturar</>}
+                      </button>
+                    )}
+                    <button onClick={() => fileInputRef.current?.click()} disabled={uploadingImage}
                       style={{ padding: "6px 10px", borderRadius: 10, border: "none", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, background: "rgba(0,0,0,0.6)", color: "#fff" }}
                     >
-                      {recapturing ? <><div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />Capturando...</> : <><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Recapturar</>}
+                      {uploadingImage ? <><div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />Subiendo...</> : <><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>Cambiar imagen</>}
                     </button>
-                  )}
-                  <button onClick={() => fileInputRef.current?.click()} disabled={uploadingImage}
-                    style={{ padding: "6px 10px", borderRadius: 10, border: "none", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, background: "rgba(0,0,0,0.6)", color: "#fff" }}
-                  >
-                    {uploadingImage ? <><div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />Subiendo...</> : <><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>Cambiar imagen</>}
-                  </button>
+                  </div>
                 </div>
                 <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
               </div>
