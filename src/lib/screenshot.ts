@@ -30,10 +30,15 @@ async function launchBrowser(): Promise<Browser> {
   const { default: puppeteer } = await import("puppeteer-core");
 
   return puppeteer.launch({
-    args: chromium.args,
+    args: [
+      ...chromium.args,
+      "--single-process",        // Reduces memory; avoids multi-process crashes in Lambda
+      "--no-zygote",
+    ],
     defaultViewport: chromium.defaultViewport,
     executablePath: await chromium.executablePath(),
     headless: chromium.headless,
+    protocolTimeout: 30_000,   // 30 s — prevent protocol calls hanging forever
   });
 }
 
@@ -410,41 +415,41 @@ export async function processSingleScreenshot(
   }
 }
 
-/** Process all URLs for a job, persisting progress to Supabase after each page. */
+/** Process all URLs for a job, persisting progress to Supabase after each page.
+ *
+ * Each URL gets its own fresh browser instance to avoid the "Target.createTarget
+ * timed out" crash that occurs when reusing a single Chromium process across
+ * multiple tabs in a serverless / Lambda environment.
+ */
 export async function processScreenshots(jobId: string, urls: string[]): Promise<void> {
-  let browser: Browser | null = null;
   const results: ScreenshotResult[] = [];
   let completed = 0;
 
-  try {
-    browser = await launchBrowser();
-
-    for (const url of urls) {
-      try {
-        const page = await browser.newPage();
-        const result = await capturePageToStorage(page, url, jobId);
-        await page.close();
-        results.push(result);
-      } catch (err) {
-        results.push({
-          url,
-          screenshotPath: "",
-          title: url,
-          description: "",
-          error: err instanceof Error ? err.message : "Error desconocido",
-        });
-      }
-
-      completed++;
-      // Persist progress after every page so polling always sees fresh data
-      await updateJobProgress(jobId, { completed, results });
+  for (const url of urls) {
+    let browser: Browser | null = null;
+    try {
+      browser = await launchBrowser();
+      const page = await browser.newPage();
+      const result = await capturePageToStorage(page, url, jobId);
+      await page.close();
+      results.push(result);
+    } catch (err) {
+      results.push({
+        url,
+        screenshotPath: "",
+        title: url,
+        description: "",
+        error: err instanceof Error ? err.message : "Error desconocido",
+      });
+    } finally {
+      // Always close the browser before moving to the next URL
+      if (browser) await browser.close().catch(() => {});
     }
 
-    await updateJobProgress(jobId, { status: "complete", completed, results });
-  } catch (err) {
-    await updateJobProgress(jobId, { status: "error" });
-    console.error("Screenshot job error:", err);
-  } finally {
-    if (browser) await browser.close().catch(() => {});
+    completed++;
+    // Persist progress after every page so polling always sees fresh data
+    await updateJobProgress(jobId, { completed, results });
   }
+
+  await updateJobProgress(jobId, { status: "complete", completed, results });
 }
