@@ -1,4 +1,4 @@
-import type { Project, Annotation, AnnotationType, PageMeta, CustomNode, TreeNode } from "@/types";
+import type { Project, Annotation, AnnotationType, PageMeta, CustomNode, TreeNode, ProjectSettings } from "@/types";
 import { v4 as uuidv4 } from "uuid";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -25,6 +25,7 @@ function rowToProject(row: Record<string, unknown>): Project {
     pageTags:         (row.page_tags as Project["pageTags"]) ?? {},
     pageNames:        (row.page_names as Project["pageNames"]) ?? {},
     pageDrawings:     (row.page_drawings as Project["pageDrawings"]) ?? {},
+    settings:         (row.settings as ProjectSettings) ?? {},
     thumbnailUrl:     row.thumbnail_url as string | undefined,
     screenshotJobId:  row.screenshot_job_id as string | undefined,
     isFavorite:       (row.is_favorite as boolean) ?? false,
@@ -53,6 +54,7 @@ function projectToRow(p: Project): Record<string, unknown> {
     page_tags:        p.pageTags ?? {},
     page_names:       p.pageNames ?? {},
     page_drawings:    p.pageDrawings ?? {},
+    settings:         p.settings ?? {},
     updated_at:       p.updatedAt,
     created_at:       p.createdAt,
   };

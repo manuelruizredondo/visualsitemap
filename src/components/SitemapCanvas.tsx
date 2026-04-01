@@ -133,6 +133,19 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
   const toggleTagRef = useRef<(pageKey: string, tagId: string, selected: boolean) => void>(() => {});
   const stableToggleTag = useCallback((pageKey: string, tagId: string, selected: boolean) => toggleTagRef.current(pageKey, tagId, selected), []);
 
+  // ── Persist visualization settings (debounced) ──────────────────────
+  const settingsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveSettings = useCallback((patch: Record<string, unknown>) => {
+    if (settingsSaveTimer.current) clearTimeout(settingsSaveTimer.current);
+    settingsSaveTimer.current = setTimeout(() => {
+      fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: patch }),
+      }).catch(() => {});
+    }, 400);
+  }, [projectId]);
+
   // Load project from API
   useEffect(() => {
     async function load() {
@@ -143,7 +156,15 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
         const proj: Project = data.project;
         setProject(proj);
 
-        const { nodes: treeNodes, edges: treeEdges } = treeToFlow(proj.tree, verticalFromDepth);
+        // Restore persisted visualization settings
+        const savedVfd = proj.settings?.verticalFromDepth ?? 2;
+        const savedDir = proj.settings?.direction ?? "TB";
+        const savedEdge = proj.settings?.edgeStyle ?? "bezier";
+        setVerticalFromDepth(savedVfd);
+        setDirection(savedDir);
+        setEdgeStyle(savedEdge);
+
+        const { nodes: treeNodes, edges: treeEdges } = treeToFlow(proj.tree, savedVfd);
         const { nodes: customNodes, edges: customEdges } = customNodesToFlow(proj.customNodes ?? []);
 
         // Enrich tree nodes with pageMeta data and tags
@@ -179,6 +200,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
               data: {
                 ...n.data,
                 screenshotUrl: meta.screenshotPath || undefined,
+                thumbnailUrl: meta.thumbnailPath || undefined,
                 customImageUrl: meta.customImageUrl || undefined,
                 title: customName || meta.title || n.data.label,
                 seoScore,
@@ -280,6 +302,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
                       ...node.data,
                       isCapturing: false,
                       screenshotUrl: result.screenshotPath || node.data.screenshotUrl,
+                      thumbnailUrl: result.thumbnailPath || node.data.thumbnailUrl,
                       title: result.title || node.data.label,
                       hasError: !!result.error,
                     },
@@ -294,7 +317,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
               fetch(`/api/projects/${projectId}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ thumbnailUrl: result.screenshotPath }),
+                body: JSON.stringify({ thumbnailUrl: result.thumbnailPath || result.screenshotPath }),
               }).catch(() => {});
             }
           } else {
@@ -565,6 +588,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
                       ...node.data,
                       isCapturing: false,
                       screenshotUrl: result.screenshotPath || node.data.screenshotUrl,
+                      thumbnailUrl: result.thumbnailPath || node.data.thumbnailUrl,
                       title: result.title || node.data.label,
                       hasError: !!result.error,
                     },
@@ -580,7 +604,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
               fetch(`/api/projects/${projectId}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ thumbnailUrl: result.screenshotPath }),
+                body: JSON.stringify({ thumbnailUrl: result.thumbnailPath || result.screenshotPath }),
               }).catch(() => {});
             }
           } else {
@@ -949,8 +973,9 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
         a11yScore = calculateA11yScore(meta.a11y);
       }
 
-      // Cache-bust the screenshot URL
+      // Cache-bust the screenshot URLs
       const bustUrl = meta.screenshotPath ? `${meta.screenshotPath}?t=${Date.now()}` : undefined;
+      const bustThumb = meta.thumbnailPath ? `${meta.thumbnailPath}?t=${Date.now()}` : undefined;
 
       setNodes((prev) =>
         prev.map((n) => {
@@ -961,6 +986,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
               data: {
                 ...n.data,
                 screenshotUrl: bustUrl,
+                thumbnailUrl: bustThumb,
                 title: meta.title || n.data.label,
                 seoScore,
                 a11yScore,
@@ -1150,10 +1176,10 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
                   <div style={{ padding: "10px 16px 6px" }}>
                     <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--ec-on-surface-variant)", marginBottom: 8 }}>Disposición</p>
                     <div className="flex gap-2">
-                      <button onClick={() => { onLayout("TB"); }}
+                      <button onClick={() => { onLayout("TB"); saveSettings({ direction: "TB" }); }}
                         style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, transition: "all 0.15s", background: direction === "TB" ? "var(--ec-secondary)" : "var(--ec-surface-container-low)", color: direction === "TB" ? "#fff" : "var(--ec-on-surface-variant)" }}
                       >Vertical</button>
-                      <button onClick={() => { onLayout("LR"); }}
+                      <button onClick={() => { onLayout("LR"); saveSettings({ direction: "LR" }); }}
                         style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, transition: "all 0.15s", background: direction === "LR" ? "var(--ec-secondary)" : "var(--ec-surface-container-low)", color: direction === "LR" ? "#fff" : "var(--ec-on-surface-variant)" }}
                       >Horizontal</button>
                     </div>
@@ -1169,7 +1195,9 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
                         max={6}
                         value={verticalFromDepth}
                         onChange={(e) => {
-                          setVerticalFromDepth(Number(e.target.value));
+                          const val = Number(e.target.value);
+                          setVerticalFromDepth(val);
+                          saveSettings({ verticalFromDepth: val });
                         }}
                         style={{ flex: 1, accentColor: "var(--ec-secondary)" }}
                       />
@@ -1291,6 +1319,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
             onClick={() => {
               setEdgeStyle("bezier");
               onLayout(direction, "bezier");
+              saveSettings({ edgeStyle: "bezier" });
             }}
             style={
               edgeStyle === "bezier"
@@ -1309,6 +1338,7 @@ function SitemapCanvasInner({ projectId }: SitemapCanvasProps) {
             onClick={() => {
               setEdgeStyle("cleanStep");
               onLayout(direction, "cleanStep");
+              saveSettings({ edgeStyle: "cleanStep" });
             }}
             style={
               edgeStyle === "cleanStep"

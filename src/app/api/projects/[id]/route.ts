@@ -54,6 +54,11 @@ export async function PATCH(req: Request, { params }: Params) {
     project.updatedAt = new Date().toISOString();
     await saveProject(project);
   }
+  if (body.settings && project) {
+    project.settings = { ...(project.settings ?? {}), ...body.settings };
+    project.updatedAt = new Date().toISOString();
+    await saveProject(project);
+  }
 
   return NextResponse.json({ ok: true });
 }

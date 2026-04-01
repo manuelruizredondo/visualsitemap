@@ -7,6 +7,7 @@ export interface PageNodeData {
   url: string;
   fullPath: string;
   screenshotUrl?: string;
+  thumbnailUrl?: string;
   customImageUrl?: string;
   title?: string;
   depth: number;

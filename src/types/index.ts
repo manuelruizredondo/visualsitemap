@@ -56,6 +56,7 @@ export interface A11yData {
 export interface ScreenshotResult {
   url: string;
   screenshotPath: string;
+  thumbnailPath?: string;
   title: string;
   description: string;
   error?: string;
@@ -84,6 +85,7 @@ export interface PageMeta {
   title: string;
   description: string;
   screenshotPath: string;
+  thumbnailPath?: string;
   customImageUrl?: string;
   seo?: SeoData;
   a11y?: A11yData;
@@ -103,6 +105,13 @@ export interface Tag {
   color: string; // hex color like "#ef4444"
 }
 
+/** Persisted visualization settings for a project */
+export interface ProjectSettings {
+  verticalFromDepth?: number;
+  direction?: "TB" | "LR";
+  edgeStyle?: "bezier" | "cleanStep";
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -113,6 +122,7 @@ export interface Project {
   tree: TreeNode;
   screenshotJobId?: string;
   thumbnailUrl?: string;
+  settings?: ProjectSettings;                // visualization settings
   pageMeta: Record<string, PageMeta>;        // keyed by url (or nodeId for custom nodes)
   annotations: Record<string, Annotation[]>; // keyed by url (or nodeId for custom nodes)
   customNodes: CustomNode[];

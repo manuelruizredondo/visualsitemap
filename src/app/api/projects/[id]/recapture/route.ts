@@ -39,6 +39,7 @@ export async function POST(req: Request, { params }: Params) {
       title: result.title || existing.title,
       description: result.description || existing.description,
       screenshotPath: result.screenshotPath || existing.screenshotPath,
+      thumbnailPath: result.thumbnailPath || existing.thumbnailPath,
       seo: result.seo ?? existing.seo,
       a11y: result.a11y ?? existing.a11y,
     };

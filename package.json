@@ -19,7 +19,8 @@
         "@xyflow/react": "^12.4",
         "fast-xml-parser": "^5.0",
         "uuid": "^11.1",
-        "html2canvas": "^1.4"
+        "html2canvas": "^1.4",
+        "sharp": "^0.33"
     },
     "devDependencies": {
         "typescript": "^5.7",

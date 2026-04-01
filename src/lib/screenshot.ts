@@ -10,6 +10,7 @@
 import type { Browser, Page } from "puppeteer-core";
 import type { ScreenshotResult, A11yData } from "@/types";
 import { createAdminClient } from "@/lib/supabase/admin";
+import sharp from "sharp";
 
 // ── Browser ───────────────────────────────────────────────────────────────────
 
@@ -289,6 +290,81 @@ async function extractA11yData(page: Page): Promise<A11yData> {
   });
 }
 
+// ── Cookie banner dismisser ──────────────────────────────────────────────────
+
+async function dismissCookieBanners(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    // Common accept-button selectors (ordered by specificity)
+    const selectors = [
+      '#cookie-accept',
+      '#onetrust-accept-btn-handler',
+      '#accept-cookies',
+      '#acceptCookies',
+      '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+      '.cookie-accept',
+      '.accept-cookies',
+      '.js-accept-cookies',
+      '[data-action="accept-cookies"]',
+      '[data-testid="cookie-accept"]',
+      'button.btn-cookie-accept',
+    ];
+
+    // Text patterns to match inside buttons/links (case-insensitive)
+    const textPatterns = [
+      /^aceptar\s*(todas?)?$/i,
+      /^accept\s*(all)?$/i,
+      /^acepto$/i,
+      /^i agree$/i,
+      /^agree$/i,
+      /^allow\s*(all)?$/i,
+      /^permitir$/i,
+      /^ok$/i,
+      /^got it$/i,
+      /^entendido$/i,
+    ];
+
+    // 1. Try selectors first
+    for (const sel of selectors) {
+      const el = document.querySelector<HTMLElement>(sel);
+      if (el && el.offsetParent !== null) {
+        el.click();
+        return;
+      }
+    }
+
+    // 2. Fallback: scan all buttons & links for matching text
+    const candidates = [
+      ...Array.from(document.querySelectorAll('button')),
+      ...Array.from(document.querySelectorAll('a[role="button"]')),
+      ...Array.from(document.querySelectorAll('[class*="cookie"] a, [class*="cookie"] button')),
+      ...Array.from(document.querySelectorAll('[id*="cookie"] a, [id*="cookie"] button')),
+    ];
+
+    for (const el of candidates) {
+      const text = (el.textContent || '').trim();
+      if (textPatterns.some((p) => p.test(text)) && (el as HTMLElement).offsetParent !== null) {
+        (el as HTMLElement).click();
+        return;
+      }
+    }
+
+    // 3. Last resort: hide common cookie banner containers via CSS
+    const bannerSelectors = [
+      '#cookie-banner', '#cookiebanner', '#cookie-bar', '#cookie-consent',
+      '#CybotCookiebotDialog', '#onetrust-banner-sdk', '#gdpr-banner',
+      '.cookie-banner', '.cookie-consent', '.cookie-bar', '.cc-window',
+      '[class*="cookie-banner"]', '[class*="cookie-consent"]', '[id*="cookie-banner"]',
+    ];
+    for (const sel of bannerSelectors) {
+      const el = document.querySelector<HTMLElement>(sel);
+      if (el) el.style.display = 'none';
+    }
+  });
+
+  // Brief wait for banner animation to complete
+  await new Promise((r) => setTimeout(r, 300));
+}
+
 // ── Core capture ──────────────────────────────────────────────────────────────
 
 async function capturePageToStorage(
@@ -308,6 +384,7 @@ async function capturePageToStorage(
     await new Promise((r) => setTimeout(r, 2000));
 
     await neutraliseSmoothScroll(page);
+    await dismissCookieBanners(page);
 
     const title = await page.title();
     const description = await page.evaluate(() => {
@@ -321,13 +398,25 @@ async function capturePageToStorage(
     const a11yData = await extractA11yData(page);
 
     const slug = urlToSlug(url);
-    const filename = `${slug}.jpg`;
 
-    const rawBuffer = await page.screenshot({ type: "jpeg", quality: 60, fullPage: true });
-    const buffer = Buffer.isBuffer(rawBuffer) ? rawBuffer : Buffer.from(rawBuffer as Uint8Array);
-    const publicUrl = await uploadToStorage(buffer, jobId, filename);
+    // 1. Full-page screenshot (1280px) — for drawer detail view
+    const fullFilename = `${slug}.jpg`;
+    const rawFull = await page.screenshot({ type: "jpeg", quality: 60, fullPage: true });
+    const fullBuffer = Buffer.isBuffer(rawFull) ? rawFull : Buffer.from(rawFull as Uint8Array);
+    const fullUrl = await uploadToStorage(fullBuffer, jobId, fullFilename);
 
-    result.screenshotPath = publicUrl;
+    // 2. Thumbnail: crop viewport (1280×800) from fullPage, resize to 500px wide
+    const THUMB_WIDTH = 500;
+    const thumbFilename = `${slug}_thumb.jpg`;
+    const thumbBuffer = await sharp(fullBuffer)
+      .extract({ left: 0, top: 0, width: 1280, height: 800 })
+      .resize({ width: THUMB_WIDTH })
+      .jpeg({ quality: 75 })
+      .toBuffer();
+    const thumbUrl = await uploadToStorage(thumbBuffer, jobId, thumbFilename);
+
+    result.screenshotPath = fullUrl;
+    result.thumbnailPath = thumbUrl;
     result.title = title;
     result.description = description;
     result.seo = { titleLength: title.length, descriptionLength: description.length, ...seoData };

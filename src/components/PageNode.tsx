@@ -158,8 +158,9 @@ function NodeContextMenu({
 
 /* ── Main node component ────────────────────────────────────────────── */
 function PageNodeComponent({ data }: { data: PageNodeData }) {
-  const { label, url, fullPath, screenshotUrl, customImageUrl, title, depth, isVirtual, isLanguage, hasError, isCapturing, seoScore, a11yScore, nodeId, onNameChange, onDelete, onToggleTag } = data;
-  const displayImage = customImageUrl || screenshotUrl;
+  const { label, url, fullPath, screenshotUrl, thumbnailUrl, customImageUrl, title, depth, isVirtual, isLanguage, hasError, isCapturing, seoScore, a11yScore, nodeId, onNameChange, onDelete, onToggleTag } = data;
+  // Card shows thumbnail (viewport-only, 400px) if available; falls back to full screenshot
+  const displayImage = customImageUrl || thumbnailUrl || screenshotUrl;
   const displayTitle = title || label;
 
   const [editing, setEditing] = useState(false);
