@@ -330,7 +330,7 @@ export default function NodeDrawer({
                 )}
                 {displayImage && !imgError ? (
                   <img src={displayImage} alt={title}
-                    style={{ width: "100%", objectFit: "cover", objectPosition: "top", maxHeight: 210, cursor: "zoom-in" }}
+                    style={{ width: "100%", display: "block", cursor: "zoom-in" }}
                     onError={() => setImgError(true)}
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); setImageExpanded(true); }}
                   />
