@@ -256,7 +256,7 @@ export default function DrawingCanvas({ imageUrl, savedDrawing, onSave }: Drawin
   }, [strokes, imgDimensions, onSave]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col" style={{ flex: 1, minHeight: 0 }}>
       {/* Toolbar */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid var(--ec-surface-container-high)", background: "var(--ec-surface-container-low)", flexShrink: 0, flexWrap: "wrap" }}>
         {/* Draw mode toggle */}

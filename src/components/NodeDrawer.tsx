@@ -267,7 +267,7 @@ export default function NodeDrawer({
         <div className={`h-full flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${imageExpanded ? "w-[520px]" : "w-0"}`}
           style={{ background: "var(--ec-surface-container-lowest)", borderLeft: imageExpanded ? "1px solid var(--ec-surface-container-high)" : "none" }}
         >
-          <div className="min-w-[520px] flex flex-col h-full">
+          <div className="min-w-[520px] flex flex-col" style={{ flex: 1, minHeight: 0 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--ec-surface-container-high)", background: "var(--ec-surface-container-lowest)" }}>
               <span style={{ fontSize: 13, color: "var(--ec-on-surface)", fontWeight: 600 }}>{title}</span>
               <button onClick={() => setImageExpanded(false)}
@@ -330,7 +330,7 @@ export default function NodeDrawer({
                 )}
                 {displayImage && !imgError ? (
                   <img src={displayImage} alt={title}
-                    style={{ width: "100%", display: "block", cursor: "zoom-in" }}
+                    style={{ width: "100%", objectFit: "cover", objectPosition: "top", maxHeight: 210, cursor: "zoom-in" }}
                     onError={() => setImgError(true)}
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); setImageExpanded(true); }}
                   />
