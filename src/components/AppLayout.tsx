@@ -192,15 +192,35 @@ export default function AppLayout({ projects, userEmail, activeView = null, onVi
             )}
           </div>
 
-          {/* Footer: user menu */}
-          {userEmail && (
-            <>
-              <div style={{ height: 1, background: "var(--ec-surface-container-high, #e0e2e3)", margin: "10px 10px 0" }} />
-              <div style={{ padding: "12px 10px 4px", flexShrink: 0 }}>
+          {/* Footer: help + user menu */}
+          <div style={{ flexShrink: 0 }}>
+            <div style={{ height: 1, background: "var(--ec-surface-container-high, #e0e2e3)", margin: "10px 10px 8px" }} />
+            <Link
+              href="/help"
+              style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "9px 12px", borderRadius: 12,
+                textDecoration: "none", width: "100%",
+                fontSize: 13, fontWeight: 500,
+                color: "var(--ec-on-surface-variant, #6b7072)",
+                transition: "all 0.15s",
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = "var(--ec-surface-container-low, #eff1f2)"; (e.currentTarget as HTMLAnchorElement).style.color = "var(--ec-on-surface, #1a1c1e)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = "transparent"; (e.currentTarget as HTMLAnchorElement).style.color = "var(--ec-on-surface-variant, #6b7072)"; }}
+            >
+              <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
+                <line x1="12" y1="17" x2="12.01" y2="17" strokeWidth="2.5" strokeLinecap="round" />
+              </svg>
+              Ayuda
+            </Link>
+            {userEmail && (
+              <div style={{ padding: "4px 0 4px" }}>
                 <UserMenu email={userEmail} />
               </div>
-            </>
-          )}
+            )}
+          </div>
         </aside>
 
         {/* ─── Main content ─── */}
